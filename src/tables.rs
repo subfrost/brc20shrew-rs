@@ -4,7 +4,7 @@ use metashrew_support::index_pointer::KeyValuePointer;
 use once_cell::sync::Lazy;
 use std::sync::RwLock;
 
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Debug)]
 pub struct InscriptionTable {
     pub sat_to_outpoint: BST<IndexPointer>,
     pub outpoint_to_sat: IndexPointer,
@@ -22,6 +22,15 @@ pub struct InscriptionTable {
     pub next_sequence_number: IndexPointer,
     pub sequence_number_to_inscription_id: IndexPointer,
     pub inscription_id_to_sequence_number: IndexPointer,
+    pub transaction_id_to_transaction: IndexPointer,
+    pub cursed_count: IndexPointer,
+    pub blessed_count: IndexPointer,
+    pub cursed_inscription_numbers: IndexPointer,
+    pub blessed_inscription_numbers: IndexPointer,
+    pub inscription_entries: IndexPointer,
+    pub sequence_number_to_children: IndexPointer,
+    pub inscription_id_to_media_type: IndexPointer,
+    pub inscription_id_to_metadata: IndexPointer,
 }
 
 impl InscriptionTable {
@@ -43,6 +52,15 @@ impl InscriptionTable {
             next_sequence_number: IndexPointer::from_keyword("/nextsequence"),
             sequence_number_to_inscription_id: IndexPointer::from_keyword("/inscriptionid/bysequence/"),
             inscription_id_to_sequence_number: IndexPointer::from_keyword("/sequence/byinscriptionid/"),
+            transaction_id_to_transaction: IndexPointer::from_keyword("/transaction/byid/"),
+            cursed_count: IndexPointer::from_keyword("/cursed/count"),
+            blessed_count: IndexPointer::from_keyword("/blessed/count"), 
+            cursed_inscription_numbers: IndexPointer::from_keyword("/inscriptionid/bycursednumber/"),
+            blessed_inscription_numbers: IndexPointer::from_keyword("/inscriptionid/byblessednumber/"),
+            inscription_entries: IndexPointer::from_keyword("/entry/byinscriptionid/"),
+            sequence_number_to_children: IndexPointer::from_keyword("/children/bysequencenumber/"),
+            inscription_id_to_media_type: IndexPointer::from_keyword("/mediatype/byinscriptionid/"),
+            inscription_id_to_metadata: IndexPointer::from_keyword("/metadata/byinscriptionid/"),
         }
     }
 }
