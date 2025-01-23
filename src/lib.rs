@@ -1,21 +1,44 @@
 use anyhow::Result;
-use bincode;
 use bitcoin::block::Block;
 use bitcoin::hashes::Hash;
 use bitcoin::transaction::Transaction;
 use bitcoin::OutPoint;
-use bitcoin::TxOut;
 use bitcoin::Txid;
-use metashrew::index_pointer::IndexPointer;
 use metashrew::{flush, input};
 use metashrew_support::byte_view::ByteView;
 use metashrew_support::index_pointer::KeyValuePointer;
 use metashrew_support::utils::consensus_encode;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use ordinals::{Height};
 use std::error::Error;
 use std::fmt;
 use std::sync::Arc;
+
+#[derive(Debug, Clone)]
+pub(crate) struct Flotsam {
+    inscription_id: Vec<u8>,
+    sequence_number: u64,
+    offset: u64,
+    origin: Origin,
+}
+
+#[derive(Debug, Clone)]
+enum Origin {
+    New {
+        cursed: bool,
+        fee: u64,
+        hidden: bool,
+        parents: Vec<Vec<u8>>,
+        reinscription: bool,
+        unbound: bool,
+        vindicated: bool,
+    },
+    Old {
+        sequence_number: u32,
+        old_satpoint: String,
+    },
+}
+
 
 #[derive(Debug)]
 pub enum InscriptionError {
@@ -187,20 +210,34 @@ impl Charm {
 #[derive(Debug, Default, Clone)]
 pub struct Index {
     tables: InscriptionTable,
+    pub blessed_inscription_count: u64,
+    pub cursed_inscription_count: u64,
+    pub height: u32,
+    pub timestamp: u32,
+    pub next_sequence_number: u64,
+    pub lost_sats: u64,
+    pub reward: u64,
 }
+
 impl Index {
     pub fn new() -> Self {
         Self {
             tables: InscriptionTable::new(),
+            blessed_inscription_count: 0,
+            cursed_inscription_count: 0,
+            height: 0,
+            timestamp: 0,
+            next_sequence_number: 0,
+            lost_sats: 0,
+            reward: 0,
         }
     }
-    fn validate_inscription(&self, inscription: &Inscription) -> Result<()> {
+
+    fn validate_inscription(&self, inscription: &mut Inscription, input_index: usize, input_offset: u64) -> Result<()> {
         // Validate content type if present
         if let Some(ref media_type) = inscription.media_type {
             if media_type.len() > 255 {
-                return Err(
-                    InscriptionError::ValidationError("Media type too long".to_string()).into(),
-                );
+                return Err(InscriptionError::ValidationError("Media type too long".to_string()).into());
             }
         }
 
@@ -210,8 +247,24 @@ impl Index {
             return Err(InscriptionError::ValidationError("Content too large".to_string()).into());
         }
 
+        // Apply curses
+        if input_index != 0 {
+            inscription.cursed = true;
+            return Err(InscriptionError::NotInFirstInput("Inscription not in first input".to_string()).into());
+        }
+
+        if input_offset != 0 {
+            inscription.cursed = true;
+            return Err(InscriptionError::NotAtOffsetZero("Inscription not at offset zero".to_string()).into());
+        }
+
+        if inscription.pointer.is_some() {
+            inscription.cursed = true;
+        }
+
         Ok(())
     }
+
     fn get_transaction(&self, txid: Txid) -> Result<Transaction> {
         let inscriptions = INSCRIPTIONS.read().map_err(|e| {
             InscriptionError::DatabaseError(format!("Failed to acquire lock: {}", e))
@@ -222,10 +275,75 @@ impl Index {
             .select(&txid.as_byte_array().to_vec())
             .get();
 
+        if tx_bytes.is_empty() {
+            return Err(InscriptionError::TransactionError(format!("Transaction not found: {}", txid)).into());
+        }
+
         bitcoin::consensus::deserialize(&tx_bytes).map_err(|e| {
             InscriptionError::EncodingError(format!("Failed to deserialize transaction: {}", e))
                 .into()
         })
+    }
+
+    pub fn index_block(&mut self, block: &Block) -> Result<()> {
+        let height = self.height;
+        let timestamp = block.header.time as u32;
+        
+        self.height = height + 1;
+        self.timestamp = timestamp;
+
+        for tx in block.txdata.iter() {
+            self.index_transaction(tx, height, timestamp)?;
+        }
+
+        Ok(())
+    }
+
+    fn index_transaction(&mut self, tx: &Transaction, height: u32, timestamp: u32) -> Result<()> {
+        // Index transaction outputs first
+        self.index_transaction_values(tx)?;
+
+        let is_coinbase = tx.input.first().map_or(false, |input| input.previous_output.is_null());
+        if is_coinbase {
+            self.reward = tx.output.iter().map(|o| o.value.to_sat()).sum::<u64>();
+        }
+
+        let mut flotsam = Vec::new();
+        let mut total_input_value = 0u64;
+        let total_output_value = tx.output.iter().map(|o| o.value.to_sat()).sum::<u64>();
+        
+        // First pass - collect inscriptions and track sat movement
+        for (input_index, input) in tx.input.iter().enumerate() {
+            if input.previous_output.is_null() {
+                total_input_value += Height(height).subsidy();
+                continue;
+            }
+
+            if let Some(mut inscription) = self.extract_inscription(input) {
+                self.validate_inscription(&mut inscription, input_index, total_input_value)?;
+
+                let value = self.get_input_value(input)?;
+                total_input_value += value;
+
+                flotsam.push(self.create_flotsam(
+                    inscription,
+                    total_input_value,
+                    height,
+                    timestamp,
+                    total_output_value,
+                    value == 0,
+                ));
+            }
+        }
+
+        // Update inscription locations and track lost sats
+        if is_coinbase {
+            self.process_coinbase_transaction(tx, flotsam, total_input_value, total_output_value)?;
+        } else {
+            self.process_normal_transaction(tx, flotsam, total_input_value, total_output_value)?;
+        }
+
+        Ok(())
     }
 
     fn index_transaction_values(&self, tx: &Transaction) -> Result<()> {
@@ -240,574 +358,323 @@ impl Index {
         Ok(())
     }
 
-    fn index_transaction_inscriptions(
-        &self,
-        tx: &Transaction,
+    fn get_input_value(&self, input: &bitcoin::TxIn) -> Result<u64> {
+        let inscriptions = INSCRIPTIONS.read().map_err(|e| {
+            InscriptionError::DatabaseError(format!("Failed to acquire lock: {}", e))
+        })?;
+
+        Ok(inscriptions
+            .outpoint_to_value
+            .select(&consensus_encode(&input.previous_output)?)
+            .get_value::<u64>())
+    }
+
+    fn create_flotsam(
+        &mut self,
+        mut inscription: Inscription,
+        total_input_value: u64,
         height: u32,
-        tx_id: Vec<u8>,
         timestamp: u32,
-    ) -> Result<()> {
-        let mut inscriptions = INSCRIPTIONS.write().unwrap();
-        let mut offset: u64 = 0;
-        let mut output_index: u32 = 0;
-        let mut inscription_inputs = HashMap::new();
-        let mut potential_parents = HashSet::new();
-
-        // First pass - collect parents and inscriptions from inputs
-        for (input_index, input) in tx.input.iter().enumerate() {
-            if let Some(inscription) = self.extract_inscription(input) {
-                inscription_inputs.insert(input_index, inscription.clone());
-
-                if let Some(parent) = inscription.parent.as_ref() {
-                    potential_parents.insert(parent.clone());
-                }
-            }
-
-            // Track sat movement
-            let value = inscriptions
-                .outpoint_to_value
-                .select(&consensus_encode(&input.previous_output)?)
-                .get_value::<u64>();
-
-            offset += value;
-            if offset >= tx.output[output_index as usize].value.to_sat() {
-                output_index += 1;
-                offset = 0;
-            }
-        }
-
-        let total_fee = tx.input.iter().fold(0u64, |acc, input| {
-            acc + inscriptions
-                .outpoint_to_value
-                .select(&consensus_encode(&input.previous_output).unwrap())
-                .get_value::<u64>()
-        }) - tx
-            .output
-            .iter()
-            .fold(0u64, |acc, output| acc + output.value.to_sat());
-
-        let fee_per_inscription = if !inscription_inputs.is_empty() {
-            total_fee / inscription_inputs.len() as u64
+        total_output_value: u64,
+        unbound: bool,
+    ) -> Flotsam {
+        let fee = if total_input_value > total_output_value {
+            (total_input_value - total_output_value) / total_input_value
         } else {
             0
         };
 
-        // Second pass - process inscriptions and update indices
-        for (_input_index, inscription) in inscription_inputs {
-            let sequence_num = inscriptions.next_sequence_number.get_value::<u64>() + 1;
-            let outpoint = OutPoint::new(
-                Txid::from_byte_array(<Vec<u8> as AsRef<[u8]>>::as_ref(&tx_id).try_into()?),
-                output_index,
-            );
-            let sat_point = format!("{}:{}", outpoint, offset);
+        // Create a new sequence number for this inscription
+        let sequence_number = self.next_sequence_number;
 
-            // Get sat position if not unbound
-            let sat = if !inscription.unbound {
-                Some(
-                    inscriptions
-                        .outpoint_to_sat
-                        .select(&consensus_encode(&outpoint)?)
-                        .select_index(0)
-                        .get_value::<u64>(),
-                )
-            } else {
-                None
-            };
+        // Calculate the inscription number
+        let inscription_number = if inscription.cursed {
+            self.cursed_inscription_count += 1;
+            -(self.cursed_inscription_count as i64)
+        } else {
+            self.blessed_inscription_count += 1;
+            self.blessed_inscription_count as i64
+        };
 
-            // Create inscription entry
-            let entry = InscriptionEntry {
-                id: format!("{}:{}", sat_point, 0).into_bytes(),
-                number: inscription.number,
-                sequence_number: sequence_num,
-                timestamp,
-                height,
-                fee: fee_per_inscription,
-                sat,
-                parents: inscription
-                    .parent
-                    .clone()
-                    .map(|p| vec![p.to_vec()])
-                    .unwrap_or_default(),
-                children: Vec::new(),
+        inscription.number = inscription_number;
+        inscription.sequence_number = sequence_number as u64;
+        inscription.fee = fee;
+        inscription.height = height;
+        inscription.timestamp = timestamp;
+        inscription.unbound = unbound;
+
+        Flotsam {
+            inscription_id: format!("{}:{}", self.height, sequence_number).into_bytes(),
+            offset: total_input_value,
+            origin: Origin::New {
                 cursed: inscription.cursed,
-                blessed: !inscription.cursed,
-                unbound: inscription.unbound,
-                charms: self.calculate_charms(&inscription, sat, outpoint, &sat_point),
-                media_type: inscription
-                    .media_type
-                    .clone()
-                    .map(|v| <Vec<u8> as AsRef<[u8]>>::as_ref(&v).to_vec()),
-                content_length: Some(inscription.content_bytes.len() as u64),
-                delegate: None, // TODO: Add delegate extraction from inscription
-            };
+                fee,
+                hidden: inscription.hidden,
+                parents: inscription.parent.map(|p| vec![p]).unwrap_or_default(),
+                reinscription: false, // Will be set later if needed
+                unbound,
+                vindicated: inscription.cursed && self.is_jubilee_height(height),
+            },
+            sequence_number
+        }
+    }
 
-            // Update inscription mappings
-            inscriptions
-                .inscription_id_to_inscription
-                .select(&entry.id)
-                .set(Arc::new(inscription.content_bytes.to_vec()));
+    fn process_coinbase_transaction(
+        &mut self,
+        tx: &Transaction,
+        mut flotsam: Vec<Flotsam>,
+        total_input_value: u64,
+        total_output_value: u64,
+    ) -> Result<()> {
+        // Sort flotsam by offset for deterministic ordering
+        flotsam.sort_by_key(|f| f.offset);
 
-            if let Some(media_type) = inscription.media_type {
-                inscriptions
-                    .inscription_id_to_media_type
-                    .select(&entry.id)
-                    .set(Arc::new(media_type));
+        let mut output_value = 0u64;
+        let mut current_output = 0usize;
+        
+        // Process all flotsam
+        for mut flotsum in flotsam {
+            while current_output < tx.output.len() && 
+                  flotsum.offset >= output_value + tx.output[current_output].value.to_sat() {
+                output_value += tx.output[current_output].value.to_sat();
+                current_output += 1;
             }
 
-            if let Some(metadata) = inscription.metadata {
-                inscriptions
-                    .inscription_id_to_metadata
-                    .select(&entry.id)
-                    .set(Arc::new(metadata));
-            }
-
-            inscriptions
-                .satpoint_to_inscription_id
-                .select(&sat_point.clone().into_bytes())
-                .set(Arc::new(entry.id.clone()));
-
-            inscriptions
-                .inscription_id_to_satpoint
-                .select(&entry.id)
-                .set(Arc::new(sat_point.clone().into_bytes()));
-
-            inscriptions
-                .inscription_id_to_blockheight
-                .select(&entry.id)
-                .set_value(height);
-
-            inscriptions
-                .height_to_inscription_ids
-                .select_value(height)
-                .append(Arc::new(entry.id.clone()));
-
-            inscriptions
-                .sequence_number_to_inscription_id
-                .select_value::<u64>(sequence_num)
-                .set(Arc::new(entry.id.clone()));
-
-            inscriptions
-                .inscription_id_to_sequence_number
-                .select(&entry.id)
-                .set_value::<u64>(sequence_num);
-
-            inscriptions
-                .inscription_entries
-                .select(&entry.id)
-                .set(Arc::new(bincode::serialize(&entry).unwrap()));
-
-            // Update parent-child relationships
-            if let Some(ref parent_id) = inscription.parent.as_ref() {
-                if let Some(parent_sequence) = to_option_value::<IndexPointer, u64>(
-                    inscriptions
-                        .inscription_id_to_sequence_number
-                        .select(&parent_id),
-                ) {
-                    inscriptions
-                        .sequence_number_to_children
-                        .select_value(parent_sequence)
-                        .append(Arc::new(entry.id.clone()));
-                }
-            }
-
-            // Track blessed/cursed inscription numbers
-            if inscription.cursed {
-                let cursed_num =
-                    (inscriptions.cursed_inscription_numbers.get_value::<u64>() as i64) + 1;
-                inscriptions
-                    .cursed_inscription_numbers
-                    .set_value::<u64>(cursed_num as u64);
-                inscriptions
-                    .cursed_inscription_numbers
-                    .select_value((-cursed_num) as u64)
-                    .set(Arc::new(entry.id.clone()));
+            if current_output < tx.output.len() {
+                // The inscription landed in an output
+                let outpoint = OutPoint::new(tx.compute_txid(), current_output as u32);
+                let offset = flotsum.offset - output_value;
+                
+                self.update_inscription_location(&mut flotsum, outpoint, offset)?;
             } else {
-                let blessed_num =
-                    (inscriptions.blessed_inscription_numbers.get_value::<u64>() as i64) + 1;
-                inscriptions
-                    .blessed_inscription_numbers
-                    .set_value(blessed_num as u64);
-                inscriptions
-                    .blessed_inscription_numbers
-                    .select_value(blessed_num as u64)
-                    .set(Arc::new(entry.id.clone()));
+                // The inscription was lost to fees
+                self.lost_sats += total_input_value - total_output_value;
+                let null_outpoint = OutPoint::null();
+                let offset = self.lost_sats + flotsum.offset - output_value;
+                
+                self.update_inscription_location(&mut flotsum, null_outpoint, offset)?;
             }
-
-            // Update next sequence number
-            inscriptions
-                .next_sequence_number
-                .set_value::<u64>(sequence_num);
         }
 
         Ok(())
     }
 
-    fn calculate_fees(tx: &Transaction, input_value: u64) -> u64 {
-        if input_value > 0 {
-            let output_value = tx.output.iter().map(|o| o.value.to_sat()).sum::<u64>();
-            (input_value - output_value) / tx.input.len() as u64
-        } else {
-            0
-        }
-    }
-    fn calculate_charms(
-        &self,
-        inscription: &Inscription,
-        sat: Option<u64>,
-        outpoint: OutPoint,
-        sat_point: &str,
-    ) -> u32 {
-        let mut charms = 0;
+    fn process_normal_transaction(
+        &mut self,
+        tx: &Transaction,
+        mut flotsam: Vec<Flotsam>,
+        total_input_value: u64,
+        total_output_value: u64,
+    ) -> Result<()> {
+        // Sort flotsam by offset for deterministic ordering
+        flotsam.sort_by_key(|f| f.offset);
 
-        // Set basic charms
-        if inscription.cursed {
-            Charm::Cursed.set(&mut charms);
-        }
+        let mut output_value = 0u64;
+        let mut current_output = 0usize;
+        
+        // Process all flotsam
+        for mut flotsum in flotsam {
+            while current_output < tx.output.len() && 
+                  flotsum.offset >= output_value + tx.output[current_output].value.to_sat() {
+                output_value += tx.output[current_output].value.to_sat();
+                current_output += 1;
+            }
 
-        if inscription.unbound {
-            Charm::Unbound.set(&mut charms);
-        }
-
-        // Check for lost inscriptions
-        if outpoint == OutPoint::null() {
-            Charm::Lost.set(&mut charms);
-        }
-
-        // Check for reinscription
-        let inscriptions = INSCRIPTIONS.read().unwrap();
-        if inscriptions
-            .satpoint_to_inscription_id
-            .select(&sat_point.as_bytes().to_vec())
-            .get()
-            .len()
-            != 0
-        {
-            Charm::Reinscription.set(&mut charms);
-        }
-
-        // Check for burned inscriptions (OP_RETURN outputs)
-        if let Some(txout) = self.get_txout(&outpoint) {
-            if txout.script_pubkey.is_op_return() {
-                Charm::Burned.set(&mut charms);
+            if current_output < tx.output.len() {
+                // The inscription landed in an output
+                let outpoint = OutPoint::new(tx.compute_txid(), current_output as u32);
+                let offset = flotsum.offset - output_value;
+                
+                self.update_inscription_location(&mut flotsum, outpoint, offset)?;
             }
         }
 
-        // Add vindicated charm for inscriptions that would be cursed at jubilee height
-        if inscription.cursed && self.is_jubilee_height(inscription.height) {
-            Charm::Vindicated.set(&mut charms);
-            Charm::Cursed.unset(&mut charms); // Remove cursed when vindicated
+        self.reward += total_input_value - total_output_value;
+        Ok(())
+    }
+
+    fn update_inscription_location(
+        &mut self,
+        flotsum: &mut Flotsam,
+        outpoint: OutPoint,
+        offset: u64,
+    ) -> Result<()> {
+        let mut inscriptions = INSCRIPTIONS.write().unwrap();
+        let satpoint = format!("{}:{}", outpoint, offset);
+
+        // Check for reinscription
+        if inscriptions
+            .satpoint_to_inscription_id
+            .select(&satpoint.as_bytes().to_vec())
+            .get()
+            .len() > 0
+        {
+            if let Origin::New { ref mut reinscription, .. } = flotsum.origin {
+                *reinscription = true;
+            }
         }
 
-        // Check for hidden inscriptions
-        if inscription.hidden {
-            Charm::Hidden.set(&mut charms);
+        // Update inscription mappings
+        inscriptions
+            .satpoint_to_inscription_id
+            .select(&satpoint.as_bytes().to_vec())
+            .set(Arc::new(flotsum.inscription_id.clone()));
+
+        inscriptions
+            .inscription_id_to_satpoint
+            .select(&flotsum.inscription_id)
+            .set(Arc::new(satpoint.as_bytes().to_vec()));
+
+        // Update sequence number mappings
+        inscriptions
+            .sequence_number_to_inscription_id
+            .select_value(flotsum.sequence_number)
+            .set(Arc::new(flotsum.inscription_id.clone()));
+
+        inscriptions
+            .inscription_id_to_sequence_number
+            .select(&flotsum.inscription_id)
+            .set_value(flotsum.sequence_number);
+
+        if let Origin::New { cursed, .. } = flotsum.origin {
+            if cursed {
+                let cursed_num = self.cursed_inscription_count;
+                inscriptions
+                    .cursed_inscription_numbers
+                    .select_value((-(cursed_num as i64) as u64))
+                    .set(Arc::new(flotsum.inscription_id.clone()));
+            } else {
+                let blessed_num = self.blessed_inscription_count;
+                inscriptions
+                    .blessed_inscription_numbers
+                    .select_value(blessed_num)
+                    .set(Arc::new(flotsum.inscription_id.clone()));
+            }
         }
 
-        charms
+        Ok(())
     }
-    fn get_txout(&self, outpoint: &OutPoint) -> Option<TxOut> {
-        let inscriptions = INSCRIPTIONS.read().unwrap();
-        to_option(
-            inscriptions
-                .transaction_id_to_transaction
-                .select(&outpoint.txid.as_byte_array().to_vec())
-                .get(),
-        )
-        .and_then(|tx_bytes| bitcoin::consensus::deserialize(&tx_bytes).ok())
-        .and_then(|tx: Transaction| tx.output.get(outpoint.vout as usize).cloned())
-    }
-    fn is_jubilee_height(&self, _height: u32) -> bool {
-        // Add jubilee height logic here
-        // For now returning false
-        false
-    }
-    pub fn extract_inscription(&self, input: &bitcoin::TxIn) -> Option<Inscription> {
-        // Extract envelope from witness data
+
+    fn extract_inscription(&self, input: &bitcoin::TxIn) -> Option<Inscription> {
         if input.witness.len() < 2 {
             return None;
         }
+        
+        let mut inscriptions = Vec::new();
+        
+        for witness_item in input.witness.iter() {
+            if witness_item.len() < 4 {
+                continue;
+            }
 
-        let mut content_type: Option<Vec<u8>> = None;
-        let mut content: Option<Vec<u8>> = None;
-        let mut parent: Option<Vec<u8>> = None;
-        let mut metadata: Option<Vec<u8>> = None;
-        let cursed = false;
-        let unbound = false;
+            // Check for inscription marker
+            if witness_item[0..4] != [0x00, 0x63, 0x03, 0x6f] {
+                continue;
+            }
 
-        // Parse witness stack
-        let mut stack = input.witness.iter();
-
-        while let Some(element) = stack.next() {
-            if element == b"ord" {
-                // Found inscription marker
-
-                // Parse content type
-                if let Some(ct) = stack.next() {
-                    content_type = Some(ct.to_vec());
+            let mut media_type = None;
+            let mut content = None;
+            let mut parent = None;
+            let mut metadata = None;
+            let mut pointer = None;
+            let mut hidden = false;
+            let mut cursed = false;
+            
+            // Parse inscription fields
+            let mut i = 4;
+            while i < witness_item.len() {
+                if i + 2 > witness_item.len() {
+                    cursed = true;
+                    break;
                 }
 
-                // Parse content
-                if let Some(data) = stack.next() {
-                    content = Some(data.to_vec());
+                let field_type = witness_item[i];
+                let len = witness_item[i + 1] as usize;
+                i += 2;
+
+                if i + len > witness_item.len() {
+                    cursed = true;
+                    break;
                 }
 
-                // Parse optional parent
-                if let Some(p) = stack.next() {
-                    if p.starts_with(b"parent=") {
-                        parent = Some(p[7..].to_vec());
+                let field_content = witness_item[i..i + len].to_vec();
+                i += len;
+
+                match field_type {
+                    0x01 => {
+                        if media_type.is_some() {
+                            cursed = true;
+                            break;
+                        }
+                        media_type = Some(field_content);
                     }
-                }
-
-                // Parse optional metadata
-                if let Some(m) = stack.next() {
-                    if m.starts_with(b"metadata=") {
-                        metadata = Some(m[9..].to_vec());
+                    0x02 => {
+                        if content.is_some() {
+                            cursed = true;
+                            break;
+                        }
+                        content = Some(field_content);
                     }
+                    0x03 => {
+                        if parent.is_some() {
+                            cursed = true;
+                            break;
+                        }
+                        parent = Some(field_content);
+                    }
+                    0x04 => {
+                        if metadata.is_some() {
+                            cursed = true;
+                            break;
+                        }
+                        metadata = Some(field_content);
+                    }
+                    0x05 => {
+                        if pointer.is_some() {
+                            cursed = true;
+                            break;
+                        }
+                        if field_content.len() == 8 {
+                            pointer = Some(u64::from_le_bytes(field_content.try_into().unwrap()));
+                        }
+                    }
+                    0x06 => {
+                        hidden = true;
+                    }
+                    _ if field_type % 2 == 0 => {
+                        cursed = true;
+                        break;
+                    }
+                    _ => continue,
                 }
+            }
 
-                break;
+            if let Some(content) = content {
+                inscriptions.push(Inscription {
+                    media_type,
+                    content_bytes: content,
+                    parent,
+                    metadata,
+                    number: 0, // Will be set later
+                    sequence_number: 0, // Will be set later
+                    fee: 0, // Will be set later
+                    height: 0, // Will be set later
+                    timestamp: 0, // Will be set later
+                    cursed,
+                    unbound: false, // Will be set later
+                    pointer,
+                    hidden,
+                });
             }
         }
 
-        // Require content to be present
-        let content = content?;
-
-        // Create inscription with all required fields
-        Some(Inscription {
-            media_type: content_type,
-            content_bytes: content,
-            parent,
-            metadata,
-            number: 0,          // Will be set later based on blessed/cursed status
-            sequence_number: 0, // Will be set during indexing
-            fee: 0,             // Will be calculated during indexing
-            height: 0,          // Will be set during indexing
-            pointer: None,      // Optional position override
-            timestamp: 0,       // Will be set during indexing
-            cursed,
-            unbound,
-            hidden: false,
-        })
-    }
-    pub fn get_inscription_by_id(&self, id: Vec<u8>) -> Result<Option<Inscription>> {
-        let inscriptions = INSCRIPTIONS.read().unwrap();
-
-        // Get inscription data
-        let content = to_option(inscriptions.inscription_id_to_inscription.select(&id).get())
-            .map(|bytes| bytes.to_vec());
-
-        if content.is_none() {
-            return Ok(None);
-        }
-
-        // Get media type
-        let media_type = inscriptions.inscription_id_to_media_type.select(&id).get();
-
-        // Get metadata
-        let metadata = inscriptions.inscription_id_to_metadata.select(&id).get();
-
-        // Get entry
-        let entry = to_option(inscriptions.inscription_entries.select(&id).get())
-            .and_then(|entry_bytes| bincode::deserialize::<InscriptionEntry>(&entry_bytes).ok());
-
-        let entry = match entry {
-            Some(e) => e,
-            None => return Ok(None),
-        };
-
-        Ok(Some(Inscription {
-            media_type: to_option(media_type.as_ref().clone()),
-            content_bytes: content.unwrap(),
-            parent: entry.parents.first().map(|p| p.clone()),
-            metadata: to_option(metadata.as_ref().to_vec()),
-            number: entry.number,
-            sequence_number: entry.sequence_number,
-            fee: entry.fee,
-            height: entry.height,
-            timestamp: entry.timestamp,
-            cursed: entry.cursed,
-            unbound: entry.unbound,
-            pointer: None, // Since this is historical data, we don't need a pointer
-            hidden: Charm::Hidden.is_set(entry.charms),
-        }))
-    }
-}
-struct SatSink<'a> {
-    tx: &'a Transaction,
-    pointer: usize,
-    offset: u64,
-}
-
-impl<'a> SatSink<'a> {
-    pub fn new(tx: &'a Transaction) -> Self {
-        Self {
-            tx,
-            pointer: 0,
-            offset: 0,
-        }
+        inscriptions.into_iter().next()
     }
 
-    pub fn filled(&self) -> bool {
-        self.pointer >= self.tx.output.len()
-            || (self.pointer == self.tx.output.len() - 1
-                && self.offset >= self.tx.output[self.tx.output.len() - 1].value.to_sat())
-    }
-
-    pub fn current_outpoint(&self) -> OutPoint {
-        OutPoint::new(self.tx.compute_txid(), self.pointer as u32)
-    }
-
-    pub fn consume(
-        &mut self,
-        mut source: SatSource,
-        _inscriptions: &InscriptionTable,
-    ) -> Result<()> {
-        let mut inscriptions = INSCRIPTIONS.write().unwrap();
-
-        while !source.consumed() && !self.filled() {
-            let source_remaining = source.ranges.distances[source.pointer] - source.offset;
-            let target_remaining = self.tx.output[self.pointer].value.to_sat() - self.offset;
-
-            let outpoint = self.current_outpoint();
-            let sat = source.ranges.sats[source.pointer] + source.offset;
-
-            // Update sat mappings
-            let serialized = consensus_encode(&outpoint)?;
-            inscriptions
-                .outpoint_to_sat
-                .select(&serialized)
-                .append_value::<u64>(sat);
-            inscriptions
-                .sat_to_outpoint
-                .set_value(sat, Arc::new(serialized));
-
-            if target_remaining < source_remaining {
-                self.pointer += 1;
-                self.offset = 0;
-                source.offset += target_remaining;
-            } else if source_remaining < target_remaining {
-                source.pointer += 1;
-                source.offset = 0;
-                self.offset += source_remaining;
-            } else {
-                source.pointer += 1;
-                source.offset = 0;
-                self.pointer += 1;
-                self.offset = 0;
-            }
-        }
-        Ok(())
-    }
-}
-pub struct SatSource {
-    ranges: SatRanges,
-    pointer: usize,
-    offset: u64,
-}
-
-impl SatSource {
-    pub fn new(start_sat: u64, distance: u64) -> Self {
-        Self {
-            ranges: SatRanges::new(vec![start_sat], vec![distance]),
-            pointer: 0,
-            offset: 0,
-        }
-    }
-
-    pub fn from_inputs(tx: &Transaction, inscriptions: &InscriptionTable) -> Result<Self> {
-        let mut sats = Vec::new();
-
-        for input in &tx.input {
-            let outpoint_sats = inscriptions
-                .outpoint_to_sat
-                .select(&consensus_encode(&input.previous_output)?)
-                .get_list_values::<u64>();
-            sats.extend(outpoint_sats);
-        }
-
-        let inscriptions = INSCRIPTIONS.read().unwrap();
-        Ok(Self {
-            ranges: SatRanges::from_sats(sats, inscriptions.starting_sat.get_value::<u64>()),
-            pointer: 0,
-            offset: 0,
-        })
-    }
-
-    pub fn consumed(&self) -> bool {
-        self.pointer >= self.ranges.sats.len()
-            || (self.pointer == self.ranges.sats.len() - 1
-                && self.offset >= self.ranges.distances[self.ranges.distances.len() - 1])
+    fn is_jubilee_height(&self, height: u32) -> bool {
+        // Implementation depends on the specific jubilee height configured
+        height >= 1_050_000 // Mainnet jubilee height
     }
 }
 
-pub struct SatRanges {
-    sats: Vec<u64>,
-    distances: Vec<u64>,
-}
 
-impl SatRanges {
-    pub fn new(sats: Vec<u64>, distances: Vec<u64>) -> Self {
-        Self { sats, distances }
-    }
-
-    pub fn from_sats(sats: Vec<u64>, range_end: u64) -> Self {
-        let distances = sats
-            .iter()
-            .map(|sat| {
-                range_length(
-                    &mut INSCRIPTIONS.write().unwrap().sat_to_outpoint,
-                    *sat,
-                    range_end,
-                )
-            })
-            .collect();
-        Self::new(sats, distances)
-    }
-}
-
-pub fn range_length(bst: &BST<impl KeyValuePointer>, key: u64, max: u64) -> u64 {
-    let _inscriptions = INSCRIPTIONS.read().unwrap();
-    if let Some(greater) = bst.seek_greater(&key.to_be_bytes()) {
-        let greater_val = u64::from_be_bytes(greater.try_into().unwrap());
-        if greater_val > max {
-            max - key
-        } else {
-            greater_val - key
-        }
-    } else {
-        max - key
-    }
-}
-
-pub fn block_reward(height: u32) -> u64 {
-    50_0000_0000 >> (height / 210_000)
-}
-#[no_mangle]
-pub fn _start() {
-    let data = input();
-    let height = u32::from_le_bytes((&data[0..4]).try_into().unwrap());
-    let reader = &data[4..];
-
-    #[cfg(any(feature = "dogecoin", feature = "luckycoin", feature = "bellscoin"))]
-    let block: Block = AuxpowBlock::parse(&mut Cursor::<Vec<u8>>::new(reader.to_vec()))
-        .unwrap()
-        .to_consensus();
-    #[cfg(not(any(feature = "dogecoin", feature = "luckycoin", feature = "bellscoin")))]
-    let block: Block = bitcoin::consensus::deserialize(reader).unwrap();
-
-    // Initialize inscription indexer
-    let indexer = Index::new();
-    let _ = indexer.index_transaction_values(&block.txdata[0]);
-
-    for tx in block.txdata.iter().skip(1) {
-        let _ = indexer.index_transaction_values(tx);
-        let _ = indexer.index_transaction_inscriptions(
-            tx,
-            height,
-            tx.compute_txid().as_byte_array().to_vec(),
-            block.header.time,
-        );
-    }
-
-    flush();
-}
