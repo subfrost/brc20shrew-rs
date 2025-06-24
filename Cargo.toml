@@ -2,31 +2,60 @@
 name = "shrewscriptions-rs"
 version = "0.1.0"
 edition = "2021"
-description = "ORDINALS metaprotocol indexer"
+authors = ["shrewscriptions-rs contributors"]
+description = "A WASM-based inscriptions indexer for the metashrew environment"
 license = "MIT"
-repository = "https://github.com/kungfuflex/shrewscriptions-rs"
-resolver = "2"
-
-[dependencies]
-alkanes-support = { git = "https://github.com/kungfuflex/alkanes-rs.git" }
-protorune-support = { git = "https://github.com/kungfuflex/alkanes-rs.git" }
-metashrew = { git = "https://github.com/kungfuflex/alkanes-rs.git" }
-metashrew-support = { git = "https://github.com/kungfuflex/alkanes-rs.git" }
-once_cell = "1.20.2"
-bitcoin = "0.32.5"
-serde_cbor = "0.11.2"
-anyhow = "1.0.95"
-bincode = "1.3.3"
-serde = { version = "1.0.217", features = ["derive"] }
-ordinals = "0.0.14"
-
-[features]
-dogecoin = []
-bellscoin = []
-luckycoin = []
-fractal = []
-mainnet = []
-testnet = []
+repository = "https://github.com/shrewscriptions/shrewscriptions-rs"
+keywords = ["bitcoin", "inscriptions", "indexer", "wasm", "metashrew"]
+categories = ["cryptography::cryptocurrencies", "wasm"]
 
 [lib]
-crate-type = ["cdylib", "rlib"]
+crate-type = ["cdylib"]
+
+[features]
+test-utils = []
+mainnet = []
+cache = []
+
+[dependencies]
+# Core dependencies
+anyhow = "1.0"
+bitcoin = { version = "0.32.6", features = ["rand"] }
+hex = "0.4"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+protobuf = "3.0"
+once_cell = "1.19"
+thiserror = "1.0"
+bincode = "1.3"
+
+# Metashrew dependencies (using git since not published to crates.io)
+metashrew-core = { git = "https://github.com/sandshrewmetaprotocols/metashrew", branch = "master", default-features = false }
+
+[build-dependencies]
+protobuf-codegen = "3.0"
+
+[dev-dependencies]
+# Testing utilities
+proptest = "1.0"
+criterion = "0.5"
+wasm-bindgen-test = "0.3"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+
+[profile.dev]
+opt-level = 0
+debug = true
+overflow-checks = true
+
+# WASM-specific configuration
+[target.wasm32-unknown-unknown]
+rustflags = [
+    "-C", "link-arg=-zstack-size=8388608",
+    "-C", "target-feature=+bulk-memory",
+    "-C", "target-feature=+mutable-globals"
+]

@@ -1,0 +1,355 @@
+syntax = "proto3";
+
+package shrewscriptions;
+
+// Basic inscription identifier
+message InscriptionId {
+  bytes txid = 1;
+  uint32 index = 2;
+}
+
+// Bitcoin outpoint reference
+message OutPoint {
+  bytes txid = 1;
+  uint32 vout = 2;
+}
+
+// Satoshi point (outpoint + offset)
+message SatPoint {
+  OutPoint outpoint = 1;
+  uint64 offset = 2;
+}
+
+// Spaced rune representation
+message SpacedRune {
+  uint64 rune = 1;
+  uint32 spacers = 2;
+}
+
+// Rune pile (amount with divisibility)
+message Pile {
+  uint64 amount = 1;
+  uint32 divisibility = 2;
+  optional string symbol = 3;
+}
+
+// Charm enumeration
+enum Charm {
+  COIN = 0;
+  CURSED = 1;
+  EPIC = 2;
+  LEGENDARY = 3;
+  LOST = 4;
+  NINEBALL = 5;
+  RARE = 6;
+  REINSCRIPTION = 7;
+  UNBOUND = 8;
+  UNCOMMON = 9;
+  VINDICATED = 10;
+  BURNED = 11;
+}
+
+// Rarity enumeration
+enum Rarity {
+  COMMON = 0;
+  UNCOMMON = 1;
+  RARE = 2;
+  EPIC = 3;
+  LEGENDARY = 4;
+  MYTHIC = 5;
+}
+
+// Generic error response
+message ErrorResponse {
+  string error = 1;
+  uint32 code = 2;
+}
+
+// Pagination parameters
+message PaginationRequest {
+  uint32 page = 1;
+  uint32 limit = 2;
+}
+
+message PaginationResponse {
+  uint32 page = 1;
+  uint32 limit = 2;
+  bool more = 3;
+  uint64 total = 4;
+}
+
+// Get single inscription
+message GetInscriptionRequest {
+  oneof query {
+    InscriptionId id = 1;
+    int32 number = 2;
+    uint64 sat = 3;
+  }
+  optional uint32 child_index = 4;
+}
+
+message InscriptionResponse {
+  InscriptionId id = 1;
+  int32 number = 2;
+  optional uint64 sat = 3;
+  SatPoint satpoint = 4;
+  uint32 height = 5;
+  uint64 fee = 6;
+  int64 timestamp = 7;
+  repeated Charm charms = 8;
+  optional string content_type = 9;
+  optional uint64 content_length = 10;
+  optional InscriptionId delegate = 11;
+  repeated InscriptionId parents = 12;
+  repeated InscriptionId children = 13;
+  uint64 child_count = 14;
+  optional InscriptionId next = 15;
+  optional InscriptionId previous = 16;
+  optional SpacedRune rune = 17;
+  optional uint64 value = 18;
+  optional string address = 19;
+  optional string metaprotocol = 20;
+}
+
+// Get multiple inscriptions
+message GetInscriptionsRequest {
+  PaginationRequest pagination = 1;
+  optional InscriptionsFilter filter = 2;
+}
+
+message InscriptionsFilter {
+  optional uint32 height = 1;
+  optional string content_type = 2;
+  optional string metaprotocol = 3;
+  optional bool blessed_only = 4;
+  optional bool cursed_only = 5;
+}
+
+message InscriptionsResponse {
+  repeated InscriptionId ids = 1;
+  PaginationResponse pagination = 2;
+}
+
+// Get inscription content
+message GetContentRequest {
+  InscriptionId id = 1;
+}
+
+message ContentResponse {
+  bytes content = 1;
+  optional string content_type = 2;
+  optional string content_encoding = 3;
+}
+
+// Get undelegated content
+message GetUndelegatedContentRequest {
+  InscriptionId id = 1;
+}
+
+message UndelegatedContentResponse {
+  bytes content = 1;
+  optional string content_type = 2;
+  optional string content_encoding = 3;
+}
+
+// Get inscription metadata
+message GetMetadataRequest {
+  InscriptionId id = 1;
+}
+
+message MetadataResponse {
+  string metadata_hex = 1;
+}
+
+// Get children of inscription
+message GetChildrenRequest {
+  InscriptionId parent_id = 1;
+  PaginationRequest pagination = 2;
+}
+
+message ChildrenResponse {
+  repeated InscriptionId ids = 1;
+  PaginationResponse pagination = 2;
+}
+
+// Get parents of inscription
+message GetParentsRequest {
+  InscriptionId child_id = 1;
+  PaginationRequest pagination = 2;
+}
+
+message ParentsResponse {
+  repeated InscriptionId ids = 1;
+  PaginationResponse pagination = 2;
+}
+
+// Relative inscription for child/parent details
+message RelativeInscription {
+  InscriptionId id = 1;
+  int32 number = 2;
+  uint32 height = 3;
+  uint64 fee = 4;
+  int64 timestamp = 5;
+  repeated Charm charms = 6;
+  optional uint64 sat = 7;
+  SatPoint satpoint = 8;
+  OutPoint output = 9;
+}
+
+// Get child inscriptions with details
+message GetChildInscriptionsRequest {
+  InscriptionId parent_id = 1;
+  PaginationRequest pagination = 2;
+}
+
+message ChildInscriptionsResponse {
+  repeated RelativeInscription children = 1;
+  PaginationResponse pagination = 2;
+}
+
+// Get parent inscriptions with details
+message GetParentInscriptionsRequest {
+  InscriptionId child_id = 1;
+  PaginationRequest pagination = 2;
+}
+
+message ParentInscriptionsResponse {
+  repeated RelativeInscription parents = 1;
+  PaginationResponse pagination = 2;
+}
+
+// Get inscriptions on a sat
+message GetSatInscriptionsRequest {
+  uint64 sat = 1;
+  PaginationRequest pagination = 2;
+}
+
+message SatInscriptionsResponse {
+  repeated InscriptionId ids = 1;
+  PaginationResponse pagination = 2;
+}
+
+// Get inscription at specific index on sat
+message GetSatInscriptionRequest {
+  uint64 sat = 1;
+  int64 index = 2;
+}
+
+message SatInscriptionResponse {
+  optional InscriptionId id = 1;
+}
+
+// Get sat information
+message GetSatRequest {
+  uint64 sat = 1;
+}
+
+message SatResponse {
+  uint64 number = 1;
+  string name = 2;
+  string decimal = 3;
+  string degree = 4;
+  uint32 block = 5;
+  uint32 cycle = 6;
+  uint32 epoch = 7;
+  uint32 period = 8;
+  uint64 offset = 9;
+  Rarity rarity = 10;
+  string percentile = 11;
+  repeated Charm charms = 12;
+  repeated InscriptionId inscriptions = 13;
+  optional SatPoint satpoint = 14;
+  int64 timestamp = 15;
+  optional string address = 16;
+}
+
+// Sat range for UTXO
+message SatRange {
+  uint64 start = 1;
+  uint64 end = 2;
+}
+
+// Get UTXO information
+message GetUtxoRequest {
+  OutPoint outpoint = 1;
+}
+
+message UtxoResponse {
+  uint64 value = 1;
+  repeated InscriptionId inscriptions = 2;
+  map<string, Pile> runes = 3;
+  repeated SatRange sat_ranges = 4;
+}
+
+// Get block hash
+message GetBlockHashRequest {
+  optional uint32 height = 1;
+}
+
+message BlockHashResponse {
+  string hash = 1;
+}
+
+// Get block height
+message GetBlockHeightRequest {}
+
+message BlockHeightResponse {
+  uint32 height = 1;
+}
+
+// Get block time
+message GetBlockTimeRequest {
+  optional uint32 height = 1;
+}
+
+message BlockTimeResponse {
+  int64 timestamp = 1;
+}
+
+// Get detailed block info
+message GetBlockInfoRequest {
+  oneof query {
+    uint32 height = 1;
+    string hash = 2;
+  }
+}
+
+message BlockInfoResponse {
+  string hash = 1;
+  uint32 height = 2;
+  uint64 average_fee = 3;
+  uint64 average_fee_rate = 4;
+  uint32 bits = 5;
+  bytes chainwork = 6;
+  int32 confirmations = 7;
+  double difficulty = 8;
+  repeated uint64 feerate_percentiles = 9;
+  uint64 max_fee = 10;
+  uint64 max_fee_rate = 11;
+  uint32 max_tx_size = 12;
+  uint64 median_fee = 13;
+  optional uint64 median_time = 14;
+  bytes merkle_root = 15;
+  uint64 min_fee = 16;
+  uint64 min_fee_rate = 17;
+  optional string next_block = 18;
+  uint32 nonce = 19;
+  optional string previous_block = 20;
+  uint64 subsidy = 21;
+  string target = 22;
+  uint64 timestamp = 23;
+  uint64 total_fee = 24;
+  uint64 total_size = 25;
+  uint64 total_weight = 26;
+  uint64 transaction_count = 27;
+  uint32 version = 28;
+}
+
+// Get transaction hex
+message GetTransactionRequest {
+  bytes txid = 1;
+}
+
+message TransactionResponse {
+  string hex = 1;
+}

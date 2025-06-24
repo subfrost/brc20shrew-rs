@@ -1,4 +1,51 @@
+reference
+# Rust
+/target/
+**/*.rs.bk
+Cargo.lock
+
+# WASM
+*.wasm
+
+# IDE
+.vscode/
+.idea/
 *.swp
 *.swo
-target
-src/tests/std/**/*.rs
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Coverage reports
+coverage/
+tarpaulin-report.html
+
+# Protobuf generated files
+src/proto/
+
+# Memory bank (reference only, not for production)
+memory-bank/
+
+# Temporary files
+*.tmp
+*.temp
+
+# Build artifacts
+dist/
+build/
+
+# Node modules (if any JS tooling is added)
+node_modules/
+
+# Environment files
+.env
+.env.local
+.env.production
+
+# Backup files
+*.bak
+*.backup

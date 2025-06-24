@@ -1,79 +1,112 @@
-use crate::bst::BST;
-use metashrew::index_pointer::IndexPointer;
-use metashrew_support::index_pointer::KeyValuePointer;
+use metashrew_core::index_pointer::IndexPointer;
 use once_cell::sync::Lazy;
-use std::sync::RwLock;
 
-#[derive(Default, Clone, Debug)]
-pub struct InscriptionTable {
-    pub sat_to_outpoint: BST<IndexPointer>,
-    pub outpoint_to_sat: IndexPointer,
-    pub outpoint_to_value: IndexPointer,
-    pub outpoint_to_sequence_numbers: IndexPointer,
-    pub height_to_blockhash: IndexPointer,
-    pub sequence_number_to_entry: IndexPointer,
-    pub blockhash_to_height: IndexPointer,
-    pub starting_sat: IndexPointer,
-    pub inscription_id_to_inscription: IndexPointer,
-    pub satpoint_to_inscription_id: IndexPointer,
-    pub satpoint_to_sat: IndexPointer,
-    pub inscription_id_to_satpoint: IndexPointer,
-    pub inscription_id_to_blockheight: IndexPointer,
-    pub height_to_inscription_ids: IndexPointer,
-    pub next_sequence_number: IndexPointer,
-    pub sequence_number_to_inscription_id: IndexPointer,
-    pub inscription_id_to_sequence_number: IndexPointer,
-    pub transaction_id_to_transaction: IndexPointer,
-    pub cursed_count: IndexPointer,
-    pub blessed_count: IndexPointer,
-    pub cursed_inscription_numbers: IndexPointer,
-    pub blessed_inscription_numbers: IndexPointer,
-    pub inscription_entries: IndexPointer,
-    pub sequence_number_to_children: IndexPointer,
-    pub inscription_id_to_media_type: IndexPointer,
-    pub inscription_id_to_metadata: IndexPointer,
+#[derive(Default, Clone)]
+pub struct InscriptionTables {
+    // Core mappings
+    pub INSCRIPTION_ID_TO_SEQUENCE: IndexPointer,
+    pub SEQUENCE_TO_INSCRIPTION_ENTRY: IndexPointer,
+    pub INSCRIPTION_NUMBER_TO_SEQUENCE: IndexPointer,
+    
+    // Location tracking
+    pub SEQUENCE_TO_SATPOINT: IndexPointer,
+    pub SAT_TO_SEQUENCE: IndexPointer,
+    pub OUTPOINT_TO_INSCRIPTIONS: IndexPointer,
+    
+    // Hierarchical relationships
+    pub SEQUENCE_TO_CHILDREN: IndexPointer,
+    pub SEQUENCE_TO_PARENTS: IndexPointer,
+    
+    // Block and height indexing
+    pub HEIGHT_TO_INSCRIPTIONS: IndexPointer,
+    pub HEIGHT_TO_BLOCK_HASH: IndexPointer,
+    pub BLOCK_HASH_TO_HEIGHT: IndexPointer,
+    
+    // Content and metadata indexing
+    pub CONTENT_TYPE_TO_INSCRIPTIONS: IndexPointer,
+    pub METAPROTOCOL_TO_INSCRIPTIONS: IndexPointer,
+    
+    // Statistics and counters
+    pub GLOBAL_SEQUENCE_COUNTER: IndexPointer,
+    pub BLESSED_INSCRIPTION_COUNTER: IndexPointer,
+    pub CURSED_INSCRIPTION_COUNTER: IndexPointer,
+    
+    // Special collections
+    pub HOME_INSCRIPTIONS: IndexPointer,
+    pub COLLECTIONS: IndexPointer,
+    
+    // Sat tracking (for sat index)
+    pub SAT_TO_INSCRIPTIONS: IndexPointer,
+    pub INSCRIPTION_TO_SAT: IndexPointer,
+    
+    // Transaction tracking
+    pub TXID_TO_INSCRIPTIONS: IndexPointer,
+    pub INSCRIPTION_TO_TXID: IndexPointer,
+    
+    // Address tracking (for address index)
+    pub ADDRESS_TO_INSCRIPTIONS: IndexPointer,
+    pub INSCRIPTION_TO_ADDRESS: IndexPointer,
+    
+    // Rune tracking
+    pub RUNE_TO_INSCRIPTIONS: IndexPointer,
+    pub INSCRIPTION_TO_RUNE: IndexPointer,
+    
+    // Content storage
+    pub INSCRIPTION_CONTENT: IndexPointer,
+    pub INSCRIPTION_METADATA: IndexPointer,
+    
+    // Delegation tracking
+    pub DELEGATE_TO_INSCRIPTIONS: IndexPointer,
+    pub INSCRIPTION_TO_DELEGATE: IndexPointer,
 }
 
-impl InscriptionTable {
+impl InscriptionTables {
     pub fn new() -> Self {
-        InscriptionTable {
-            sat_to_outpoint: BST::at(IndexPointer::from_keyword("/outpoint/bysatrange/")),
-            outpoint_to_sat: IndexPointer::from_keyword("/sat/by/outpoint/"),
-            outpoint_to_value: IndexPointer::from_keyword("/value/byoutpoint/"),
-            outpoint_to_sequence_numbers: IndexPointer::from_keyword("/sequencenumbers/byoutpoint"),
-            height_to_blockhash: IndexPointer::from_keyword("/blockhash/byheight/"),
-            blockhash_to_height: IndexPointer::from_keyword("/height/byblockhash/"),
-            starting_sat: IndexPointer::from_keyword("/startingsat"),
-            inscription_id_to_inscription: IndexPointer::from_keyword("/inscription/byid/"),
-            satpoint_to_inscription_id: IndexPointer::from_keyword("/inscriptionid/bysatpoint"),
-            satpoint_to_sat: IndexPointer::from_keyword("/sat/bysatpoint"),
-            inscription_id_to_satpoint: IndexPointer::from_keyword("/satpoint/byinscriptionid/"),
-            inscription_id_to_blockheight: IndexPointer::from_keyword("/height/byinscription/"),
-            height_to_inscription_ids: IndexPointer::from_keyword("/inscriptionids/byheight/"),
-            next_sequence_number: IndexPointer::from_keyword("/nextsequence"),
-            sequence_number_to_inscription_id: IndexPointer::from_keyword(
-                "/inscriptionid/bysequence/",
-            ),
-            sequence_number_to_entry: IndexPointer::from_keyword("/entry/bysequence/"),
-            inscription_id_to_sequence_number: IndexPointer::from_keyword(
-                "/sequence/byinscriptionid/",
-            ),
-            transaction_id_to_transaction: IndexPointer::from_keyword("/transaction/byid/"),
-            cursed_count: IndexPointer::from_keyword("/cursed/count"),
-            blessed_count: IndexPointer::from_keyword("/blessed/count"),
-            cursed_inscription_numbers: IndexPointer::from_keyword(
-                "/inscriptionid/bycursednumber/",
-            ),
-            blessed_inscription_numbers: IndexPointer::from_keyword(
-                "/inscriptionid/byblessednumber/",
-            ),
-            inscription_entries: IndexPointer::from_keyword("/entry/byinscriptionid/"),
-            sequence_number_to_children: IndexPointer::from_keyword("/children/bysequencenumber/"),
-            inscription_id_to_media_type: IndexPointer::from_keyword("/mediatype/byinscriptionid/"),
-            inscription_id_to_metadata: IndexPointer::from_keyword("/metadata/byinscriptionid/"),
+        InscriptionTables {
+            INSCRIPTION_ID_TO_SEQUENCE: IndexPointer::from_keyword("/inscriptions/id_to_seq/"),
+            SEQUENCE_TO_INSCRIPTION_ENTRY: IndexPointer::from_keyword("/inscriptions/seq_to_entry/"),
+            INSCRIPTION_NUMBER_TO_SEQUENCE: IndexPointer::from_keyword("/inscriptions/num_to_seq/"),
+            
+            SEQUENCE_TO_SATPOINT: IndexPointer::from_keyword("/inscriptions/seq_to_satpoint/"),
+            SAT_TO_SEQUENCE: IndexPointer::from_keyword("/inscriptions/sat_to_seq/"),
+            OUTPOINT_TO_INSCRIPTIONS: IndexPointer::from_keyword("/inscriptions/outpoint_to_list/"),
+            
+            SEQUENCE_TO_CHILDREN: IndexPointer::from_keyword("/inscriptions/seq_to_children/"),
+            SEQUENCE_TO_PARENTS: IndexPointer::from_keyword("/inscriptions/seq_to_parents/"),
+            
+            HEIGHT_TO_INSCRIPTIONS: IndexPointer::from_keyword("/inscriptions/height_to_list/"),
+            HEIGHT_TO_BLOCK_HASH: IndexPointer::from_keyword("/inscriptions/height_to_hash/"),
+            BLOCK_HASH_TO_HEIGHT: IndexPointer::from_keyword("/inscriptions/hash_to_height/"),
+            
+            CONTENT_TYPE_TO_INSCRIPTIONS: IndexPointer::from_keyword("/inscriptions/content_type/"),
+            METAPROTOCOL_TO_INSCRIPTIONS: IndexPointer::from_keyword("/inscriptions/metaprotocol/"),
+            
+            GLOBAL_SEQUENCE_COUNTER: IndexPointer::from_keyword("/inscriptions/counters/sequence"),
+            BLESSED_INSCRIPTION_COUNTER: IndexPointer::from_keyword("/inscriptions/counters/blessed"),
+            CURSED_INSCRIPTION_COUNTER: IndexPointer::from_keyword("/inscriptions/counters/cursed"),
+            
+            HOME_INSCRIPTIONS: IndexPointer::from_keyword("/inscriptions/home/"),
+            COLLECTIONS: IndexPointer::from_keyword("/inscriptions/collections/"),
+            
+            SAT_TO_INSCRIPTIONS: IndexPointer::from_keyword("/inscriptions/sat_to_inscriptions/"),
+            INSCRIPTION_TO_SAT: IndexPointer::from_keyword("/inscriptions/inscription_to_sat/"),
+            
+            TXID_TO_INSCRIPTIONS: IndexPointer::from_keyword("/inscriptions/txid_to_inscriptions/"),
+            INSCRIPTION_TO_TXID: IndexPointer::from_keyword("/inscriptions/inscription_to_txid/"),
+            
+            ADDRESS_TO_INSCRIPTIONS: IndexPointer::from_keyword("/inscriptions/address_to_inscriptions/"),
+            INSCRIPTION_TO_ADDRESS: IndexPointer::from_keyword("/inscriptions/inscription_to_address/"),
+            
+            RUNE_TO_INSCRIPTIONS: IndexPointer::from_keyword("/inscriptions/rune_to_inscriptions/"),
+            INSCRIPTION_TO_RUNE: IndexPointer::from_keyword("/inscriptions/inscription_to_rune/"),
+            
+            INSCRIPTION_CONTENT: IndexPointer::from_keyword("/inscriptions/content/"),
+            INSCRIPTION_METADATA: IndexPointer::from_keyword("/inscriptions/metadata/"),
+            
+            DELEGATE_TO_INSCRIPTIONS: IndexPointer::from_keyword("/inscriptions/delegate_to_inscriptions/"),
+            INSCRIPTION_TO_DELEGATE: IndexPointer::from_keyword("/inscriptions/inscription_to_delegate/"),
         }
     }
 }
 
-pub static INSCRIPTIONS: Lazy<RwLock<InscriptionTable>> =
-    Lazy::new(|| RwLock::new(InscriptionTable::new()));
+pub static TABLES: Lazy<InscriptionTables> = Lazy::new(|| InscriptionTables::new());
