@@ -1,112 +1,315 @@
 use metashrew_core::index_pointer::IndexPointer;
-use once_cell::sync::Lazy;
+use metashrew_support::index_pointer::KeyValuePointer;
 
-#[derive(Default, Clone)]
-pub struct InscriptionTables {
+// Create individual IndexPointer instances directly
+lazy_static::lazy_static! {
     // Core mappings
-    pub INSCRIPTION_ID_TO_SEQUENCE: IndexPointer,
-    pub SEQUENCE_TO_INSCRIPTION_ENTRY: IndexPointer,
-    pub INSCRIPTION_NUMBER_TO_SEQUENCE: IndexPointer,
+    pub static ref INSCRIPTION_ID_TO_SEQUENCE: IndexPointer = IndexPointer::from_keyword("/inscriptions/id_to_seq/");
+    pub static ref SEQUENCE_TO_INSCRIPTION_ENTRY: IndexPointer = IndexPointer::from_keyword("/inscriptions/seq_to_entry/");
+    pub static ref INSCRIPTION_NUMBER_TO_SEQUENCE: IndexPointer = IndexPointer::from_keyword("/inscriptions/num_to_seq/");
     
     // Location tracking
-    pub SEQUENCE_TO_SATPOINT: IndexPointer,
-    pub SAT_TO_SEQUENCE: IndexPointer,
-    pub OUTPOINT_TO_INSCRIPTIONS: IndexPointer,
+    pub static ref SEQUENCE_TO_SATPOINT: IndexPointer = IndexPointer::from_keyword("/inscriptions/seq_to_satpoint/");
+    pub static ref SAT_TO_SEQUENCE: IndexPointer = IndexPointer::from_keyword("/inscriptions/sat_to_seq/");
+    pub static ref OUTPOINT_TO_INSCRIPTIONS: IndexPointer = IndexPointer::from_keyword("/inscriptions/outpoint_to_list/");
     
     // Hierarchical relationships
-    pub SEQUENCE_TO_CHILDREN: IndexPointer,
-    pub SEQUENCE_TO_PARENTS: IndexPointer,
+    pub static ref SEQUENCE_TO_CHILDREN: IndexPointer = IndexPointer::from_keyword("/inscriptions/seq_to_children/");
+    pub static ref SEQUENCE_TO_PARENTS: IndexPointer = IndexPointer::from_keyword("/inscriptions/seq_to_parents/");
     
     // Block and height indexing
-    pub HEIGHT_TO_INSCRIPTIONS: IndexPointer,
-    pub HEIGHT_TO_BLOCK_HASH: IndexPointer,
-    pub BLOCK_HASH_TO_HEIGHT: IndexPointer,
+    pub static ref HEIGHT_TO_INSCRIPTIONS: IndexPointer = IndexPointer::from_keyword("/inscriptions/height_to_list/");
+    pub static ref HEIGHT_TO_BLOCK_HASH: IndexPointer = IndexPointer::from_keyword("/inscriptions/height_to_hash/");
+    pub static ref BLOCK_HASH_TO_HEIGHT: IndexPointer = IndexPointer::from_keyword("/inscriptions/hash_to_height/");
     
     // Content and metadata indexing
-    pub CONTENT_TYPE_TO_INSCRIPTIONS: IndexPointer,
-    pub METAPROTOCOL_TO_INSCRIPTIONS: IndexPointer,
+    pub static ref CONTENT_TYPE_TO_INSCRIPTIONS: IndexPointer = IndexPointer::from_keyword("/inscriptions/content_type/");
+    pub static ref METAPROTOCOL_TO_INSCRIPTIONS: IndexPointer = IndexPointer::from_keyword("/inscriptions/metaprotocol/");
     
     // Statistics and counters
-    pub GLOBAL_SEQUENCE_COUNTER: IndexPointer,
-    pub BLESSED_INSCRIPTION_COUNTER: IndexPointer,
-    pub CURSED_INSCRIPTION_COUNTER: IndexPointer,
+    pub static ref GLOBAL_SEQUENCE_COUNTER: IndexPointer = IndexPointer::from_keyword("/inscriptions/counters/sequence");
+    pub static ref BLESSED_INSCRIPTION_COUNTER: IndexPointer = IndexPointer::from_keyword("/inscriptions/counters/blessed");
+    pub static ref CURSED_INSCRIPTION_COUNTER: IndexPointer = IndexPointer::from_keyword("/inscriptions/counters/cursed");
     
     // Special collections
-    pub HOME_INSCRIPTIONS: IndexPointer,
-    pub COLLECTIONS: IndexPointer,
+    pub static ref HOME_INSCRIPTIONS: IndexPointer = IndexPointer::from_keyword("/inscriptions/home/");
+    pub static ref COLLECTIONS: IndexPointer = IndexPointer::from_keyword("/inscriptions/collections/");
     
     // Sat tracking (for sat index)
-    pub SAT_TO_INSCRIPTIONS: IndexPointer,
-    pub INSCRIPTION_TO_SAT: IndexPointer,
+    pub static ref SAT_TO_INSCRIPTIONS: IndexPointer = IndexPointer::from_keyword("/inscriptions/sat_to_inscriptions/");
+    pub static ref INSCRIPTION_TO_SAT: IndexPointer = IndexPointer::from_keyword("/inscriptions/inscription_to_sat/");
     
     // Transaction tracking
-    pub TXID_TO_INSCRIPTIONS: IndexPointer,
-    pub INSCRIPTION_TO_TXID: IndexPointer,
+    pub static ref TXID_TO_INSCRIPTIONS: IndexPointer = IndexPointer::from_keyword("/inscriptions/txid_to_inscriptions/");
+    pub static ref INSCRIPTION_TO_TXID: IndexPointer = IndexPointer::from_keyword("/inscriptions/inscription_to_txid/");
     
     // Address tracking (for address index)
-    pub ADDRESS_TO_INSCRIPTIONS: IndexPointer,
-    pub INSCRIPTION_TO_ADDRESS: IndexPointer,
+    pub static ref ADDRESS_TO_INSCRIPTIONS: IndexPointer = IndexPointer::from_keyword("/inscriptions/address_to_inscriptions/");
+    pub static ref INSCRIPTION_TO_ADDRESS: IndexPointer = IndexPointer::from_keyword("/inscriptions/inscription_to_address/");
     
     // Rune tracking
-    pub RUNE_TO_INSCRIPTIONS: IndexPointer,
-    pub INSCRIPTION_TO_RUNE: IndexPointer,
+    pub static ref RUNE_TO_INSCRIPTIONS: IndexPointer = IndexPointer::from_keyword("/inscriptions/rune_to_inscriptions/");
+    pub static ref INSCRIPTION_TO_RUNE: IndexPointer = IndexPointer::from_keyword("/inscriptions/inscription_to_rune/");
     
     // Content storage
-    pub INSCRIPTION_CONTENT: IndexPointer,
-    pub INSCRIPTION_METADATA: IndexPointer,
+    pub static ref INSCRIPTION_CONTENT: IndexPointer = IndexPointer::from_keyword("/inscriptions/content/");
+    pub static ref INSCRIPTION_METADATA: IndexPointer = IndexPointer::from_keyword("/inscriptions/metadata/");
     
     // Delegation tracking
-    pub DELEGATE_TO_INSCRIPTIONS: IndexPointer,
-    pub INSCRIPTION_TO_DELEGATE: IndexPointer,
+    pub static ref DELEGATE_TO_INSCRIPTIONS: IndexPointer = IndexPointer::from_keyword("/inscriptions/delegate_to_inscriptions/");
+    pub static ref INSCRIPTION_TO_DELEGATE: IndexPointer = IndexPointer::from_keyword("/inscriptions/inscription_to_delegate/");
 }
 
-impl InscriptionTables {
+/// Table wrapper structs for easier access in tests and indexing
+pub struct InscriptionTable;
+pub struct InscriptionContentTable;
+pub struct InscriptionContentTypeTable;
+pub struct InscriptionLocationTable;
+pub struct InscriptionMetadataTable;
+pub struct InscriptionParentTable;
+pub struct InscriptionChildrenTable;
+pub struct InscriptionDelegateTable;
+pub struct InscriptionNumberTable;
+pub struct InscriptionSatTable;
+pub struct CursedInscriptionTable;
+
+impl InscriptionTable {
     pub fn new() -> Self {
-        InscriptionTables {
-            INSCRIPTION_ID_TO_SEQUENCE: IndexPointer::from_keyword("/inscriptions/id_to_seq/"),
-            SEQUENCE_TO_INSCRIPTION_ENTRY: IndexPointer::from_keyword("/inscriptions/seq_to_entry/"),
-            INSCRIPTION_NUMBER_TO_SEQUENCE: IndexPointer::from_keyword("/inscriptions/num_to_seq/"),
-            
-            SEQUENCE_TO_SATPOINT: IndexPointer::from_keyword("/inscriptions/seq_to_satpoint/"),
-            SAT_TO_SEQUENCE: IndexPointer::from_keyword("/inscriptions/sat_to_seq/"),
-            OUTPOINT_TO_INSCRIPTIONS: IndexPointer::from_keyword("/inscriptions/outpoint_to_list/"),
-            
-            SEQUENCE_TO_CHILDREN: IndexPointer::from_keyword("/inscriptions/seq_to_children/"),
-            SEQUENCE_TO_PARENTS: IndexPointer::from_keyword("/inscriptions/seq_to_parents/"),
-            
-            HEIGHT_TO_INSCRIPTIONS: IndexPointer::from_keyword("/inscriptions/height_to_list/"),
-            HEIGHT_TO_BLOCK_HASH: IndexPointer::from_keyword("/inscriptions/height_to_hash/"),
-            BLOCK_HASH_TO_HEIGHT: IndexPointer::from_keyword("/inscriptions/hash_to_height/"),
-            
-            CONTENT_TYPE_TO_INSCRIPTIONS: IndexPointer::from_keyword("/inscriptions/content_type/"),
-            METAPROTOCOL_TO_INSCRIPTIONS: IndexPointer::from_keyword("/inscriptions/metaprotocol/"),
-            
-            GLOBAL_SEQUENCE_COUNTER: IndexPointer::from_keyword("/inscriptions/counters/sequence"),
-            BLESSED_INSCRIPTION_COUNTER: IndexPointer::from_keyword("/inscriptions/counters/blessed"),
-            CURSED_INSCRIPTION_COUNTER: IndexPointer::from_keyword("/inscriptions/counters/cursed"),
-            
-            HOME_INSCRIPTIONS: IndexPointer::from_keyword("/inscriptions/home/"),
-            COLLECTIONS: IndexPointer::from_keyword("/inscriptions/collections/"),
-            
-            SAT_TO_INSCRIPTIONS: IndexPointer::from_keyword("/inscriptions/sat_to_inscriptions/"),
-            INSCRIPTION_TO_SAT: IndexPointer::from_keyword("/inscriptions/inscription_to_sat/"),
-            
-            TXID_TO_INSCRIPTIONS: IndexPointer::from_keyword("/inscriptions/txid_to_inscriptions/"),
-            INSCRIPTION_TO_TXID: IndexPointer::from_keyword("/inscriptions/inscription_to_txid/"),
-            
-            ADDRESS_TO_INSCRIPTIONS: IndexPointer::from_keyword("/inscriptions/address_to_inscriptions/"),
-            INSCRIPTION_TO_ADDRESS: IndexPointer::from_keyword("/inscriptions/inscription_to_address/"),
-            
-            RUNE_TO_INSCRIPTIONS: IndexPointer::from_keyword("/inscriptions/rune_to_inscriptions/"),
-            INSCRIPTION_TO_RUNE: IndexPointer::from_keyword("/inscriptions/inscription_to_rune/"),
-            
-            INSCRIPTION_CONTENT: IndexPointer::from_keyword("/inscriptions/content/"),
-            INSCRIPTION_METADATA: IndexPointer::from_keyword("/inscriptions/metadata/"),
-            
-            DELEGATE_TO_INSCRIPTIONS: IndexPointer::from_keyword("/inscriptions/delegate_to_inscriptions/"),
-            INSCRIPTION_TO_DELEGATE: IndexPointer::from_keyword("/inscriptions/inscription_to_delegate/"),
+        Self
+    }
+    
+    pub fn get(&self, inscription_id: &str) -> Option<Vec<u8>> {
+        let pointer = INSCRIPTION_ID_TO_SEQUENCE.select(&inscription_id.as_bytes().to_vec());
+        let result = pointer.get();
+        if result.is_empty() {
+            None
+        } else {
+            Some((*result).clone())
         }
+    }
+    
+    pub fn set(&self, inscription_id: &str, data: &[u8]) {
+        let mut pointer = INSCRIPTION_ID_TO_SEQUENCE.select(&inscription_id.as_bytes().to_vec());
+        pointer.set(std::sync::Arc::new(data.to_vec()));
     }
 }
 
-pub static TABLES: Lazy<InscriptionTables> = Lazy::new(|| InscriptionTables::new());
+impl InscriptionContentTable {
+    pub fn new() -> Self {
+        Self
+    }
+    
+    pub fn get(&self, inscription_id: &str) -> Option<Vec<u8>> {
+        let pointer = INSCRIPTION_CONTENT.select(&inscription_id.as_bytes().to_vec());
+        let result = pointer.get();
+        if result.is_empty() {
+            None
+        } else {
+            Some((*result).clone())
+        }
+    }
+    
+    pub fn set(&self, inscription_id: &str, content: &[u8]) {
+        let mut pointer = INSCRIPTION_CONTENT.select(&inscription_id.as_bytes().to_vec());
+        pointer.set(std::sync::Arc::new(content.to_vec()));
+    }
+}
+
+impl InscriptionContentTypeTable {
+    pub fn new() -> Self {
+        Self
+    }
+    
+    pub fn get(&self, inscription_id: &str) -> Option<Vec<u8>> {
+        // Use a dedicated content type table
+        let content_type_table = IndexPointer::from_keyword("/inscriptions/content_types/");
+        let pointer = content_type_table.select(&inscription_id.as_bytes().to_vec());
+        let result = pointer.get();
+        if result.is_empty() {
+            None
+        } else {
+            Some((*result).clone())
+        }
+    }
+    
+    pub fn set(&self, inscription_id: &str, content_type: &[u8]) {
+        let content_type_table = IndexPointer::from_keyword("/inscriptions/content_types/");
+        let mut pointer = content_type_table.select(&inscription_id.as_bytes().to_vec());
+        pointer.set(std::sync::Arc::new(content_type.to_vec()));
+    }
+}
+
+impl InscriptionLocationTable {
+    pub fn new() -> Self {
+        Self
+    }
+    
+    pub fn get(&self, inscription_id: &str) -> Option<String> {
+        let pointer = SEQUENCE_TO_SATPOINT.select(&inscription_id.as_bytes().to_vec());
+        let result = pointer.get();
+        if result.is_empty() {
+            None
+        } else {
+            String::from_utf8((*result).clone()).ok()
+        }
+    }
+    
+    pub fn set(&self, inscription_id: &str, satpoint: &str) {
+        let mut pointer = SEQUENCE_TO_SATPOINT.select(&inscription_id.as_bytes().to_vec());
+        pointer.set(std::sync::Arc::new(satpoint.as_bytes().to_vec()));
+    }
+}
+
+impl InscriptionMetadataTable {
+    pub fn new() -> Self {
+        Self
+    }
+    
+    pub fn get(&self, inscription_id: &str) -> Option<Vec<u8>> {
+        let pointer = INSCRIPTION_METADATA.select(&inscription_id.as_bytes().to_vec());
+        let result = pointer.get();
+        if result.is_empty() {
+            None
+        } else {
+            Some((*result).clone())
+        }
+    }
+    
+    pub fn set(&self, inscription_id: &str, metadata: &[u8]) {
+        let mut pointer = INSCRIPTION_METADATA.select(&inscription_id.as_bytes().to_vec());
+        pointer.set(std::sync::Arc::new(metadata.to_vec()));
+    }
+}
+
+impl InscriptionParentTable {
+    pub fn new() -> Self {
+        Self
+    }
+    
+    pub fn get(&self, inscription_id: &str) -> Option<String> {
+        let pointer = SEQUENCE_TO_PARENTS.select(&inscription_id.as_bytes().to_vec());
+        let result = pointer.get();
+        if result.is_empty() {
+            None
+        } else {
+            String::from_utf8((*result).clone()).ok()
+        }
+    }
+    
+    pub fn set(&self, inscription_id: &str, parent_id: &str) {
+        let mut pointer = SEQUENCE_TO_PARENTS.select(&inscription_id.as_bytes().to_vec());
+        pointer.set(std::sync::Arc::new(parent_id.as_bytes().to_vec()));
+    }
+}
+
+impl InscriptionChildrenTable {
+    pub fn new() -> Self {
+        Self
+    }
+    
+    pub fn get(&self, inscription_id: &str) -> Option<Vec<u8>> {
+        let pointer = SEQUENCE_TO_CHILDREN.select(&inscription_id.as_bytes().to_vec());
+        let result = pointer.get();
+        if result.is_empty() {
+            None
+        } else {
+            Some((*result).clone())
+        }
+    }
+    
+    pub fn set(&self, inscription_id: &str, children: &[u8]) {
+        let mut pointer = SEQUENCE_TO_CHILDREN.select(&inscription_id.as_bytes().to_vec());
+        pointer.set(std::sync::Arc::new(children.to_vec()));
+    }
+}
+
+impl InscriptionDelegateTable {
+    pub fn new() -> Self {
+        Self
+    }
+    
+    pub fn get(&self, inscription_id: &str) -> Option<String> {
+        let pointer = INSCRIPTION_TO_DELEGATE.select(&inscription_id.as_bytes().to_vec());
+        let result = pointer.get();
+        if result.is_empty() {
+            None
+        } else {
+            String::from_utf8((*result).clone()).ok()
+        }
+    }
+    
+    pub fn set(&self, inscription_id: &str, delegate_id: &str) {
+        let mut pointer = INSCRIPTION_TO_DELEGATE.select(&inscription_id.as_bytes().to_vec());
+        pointer.set(std::sync::Arc::new(delegate_id.as_bytes().to_vec()));
+    }
+}
+
+impl InscriptionNumberTable {
+    pub fn new() -> Self {
+        Self
+    }
+    
+    pub fn get(&self, inscription_id: &str) -> Option<Vec<u8>> {
+        let number_table = IndexPointer::from_keyword("/inscriptions/numbers/");
+        let pointer = number_table.select(&inscription_id.as_bytes().to_vec());
+        let result = pointer.get();
+        if result.is_empty() {
+            None
+        } else {
+            Some((*result).clone())
+        }
+    }
+    
+    pub fn set(&self, inscription_id: &str, number: u64) {
+        let number_table = IndexPointer::from_keyword("/inscriptions/numbers/");
+        let number_bytes = serde_json::to_vec(&number).unwrap();
+        let mut pointer = number_table.select(&inscription_id.as_bytes().to_vec());
+        pointer.set(std::sync::Arc::new(number_bytes));
+    }
+}
+
+impl InscriptionSatTable {
+    pub fn new() -> Self {
+        Self
+    }
+    
+    pub fn get(&self, inscription_id: &str) -> Option<Vec<u8>> {
+        let pointer = INSCRIPTION_TO_SAT.select(&inscription_id.as_bytes().to_vec());
+        let result = pointer.get();
+        if result.is_empty() {
+            None
+        } else {
+            Some((*result).clone())
+        }
+    }
+    
+    pub fn set(&self, inscription_id: &str, sat: u64) {
+        let sat_bytes = serde_json::to_vec(&sat).unwrap();
+        let mut pointer = INSCRIPTION_TO_SAT.select(&inscription_id.as_bytes().to_vec());
+        pointer.set(std::sync::Arc::new(sat_bytes));
+    }
+}
+
+impl CursedInscriptionTable {
+    pub fn new() -> Self {
+        Self
+    }
+    
+    pub fn get(&self, inscription_id: &str) -> Option<Vec<u8>> {
+        let cursed_table = IndexPointer::from_keyword("/inscriptions/cursed/");
+        let pointer = cursed_table.select(&inscription_id.as_bytes().to_vec());
+        let result = pointer.get();
+        if result.is_empty() {
+            None
+        } else {
+            Some((*result).clone())
+        }
+    }
+    
+    pub fn set(&self, inscription_id: &str, is_cursed: bool) {
+        let cursed_table = IndexPointer::from_keyword("/inscriptions/cursed/");
+        let cursed_bytes = serde_json::to_vec(&is_cursed).unwrap();
+        let mut pointer = cursed_table.select(&inscription_id.as_bytes().to_vec());
+        pointer.set(std::sync::Arc::new(cursed_bytes));
+    }
+}

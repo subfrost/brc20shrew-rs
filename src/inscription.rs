@@ -1,6 +1,8 @@
 use bitcoin::{OutPoint, Txid};
+use bitcoin_hashes::Hash;
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use std::str::FromStr;
 
 /// Unique identifier for an inscription
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -16,7 +18,7 @@ impl InscriptionId {
 
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(36);
-        bytes.extend_from_slice(&self.txid.to_byte_array());
+        bytes.extend_from_slice(self.txid.as_byte_array());
         bytes.extend_from_slice(&self.index.to_le_bytes());
         bytes
     }
@@ -35,6 +37,30 @@ impl InscriptionId {
         let index = u32::from_le_bytes(index_bytes);
         
         Ok(Self { txid, index })
+    }
+
+    pub fn from_str(s: &str) -> Result<Self, String> {
+        if let Some(i_pos) = s.find('i') {
+            let txid_str = &s[..i_pos];
+            let index_str = &s[i_pos + 1..];
+            
+            let txid = Txid::from_str(txid_str)
+                .map_err(|e| format!("Invalid txid: {}", e))?;
+            let index = index_str.parse::<u32>()
+                .map_err(|e| format!("Invalid index: {}", e))?;
+            
+            Ok(Self { txid, index })
+        } else {
+            Err("Invalid inscription ID format, expected 'txid'i'index'".to_string())
+        }
+    }
+}
+
+impl FromStr for InscriptionId {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::from_str(s)
     }
 }
 
@@ -58,7 +84,7 @@ impl SatPoint {
 
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(44);
-        bytes.extend_from_slice(&self.outpoint.txid.to_byte_array());
+        bytes.extend_from_slice(self.outpoint.txid.as_byte_array());
         bytes.extend_from_slice(&self.outpoint.vout.to_le_bytes());
         bytes.extend_from_slice(&self.offset.to_le_bytes());
         bytes
@@ -250,7 +276,7 @@ impl fmt::Display for Charm {
 }
 
 /// Rarity of a satoshi
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum Rarity {
     Common,
     Uncommon,

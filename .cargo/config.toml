@@ -3,3 +3,7 @@ target = "wasm32-unknown-unknown"
 
 [target.wasm32-unknown-unknown]
 runner = "wasm-bindgen-test-runner"
+rustflags = ["--cfg=getrandom_js"]
+
+[env]
+RUSTFLAGS = "--cfg=web_sys_unstable_apis --cfg=getrandom_js"
