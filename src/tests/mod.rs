@@ -31,6 +31,21 @@ pub mod simple_view_test;
 #[cfg(test)]
 pub mod comprehensive_e2e_tests;
 
+#[cfg(test)]
+pub mod debug_delegation;
+
+#[cfg(test)]
+pub mod envelope_debug;
+
+#[cfg(test)]
+pub mod envelope_manual_debug;
+
+#[cfg(test)]
+pub mod ordinals_fundamental_test;
+
+#[cfg(test)]
+pub mod content_debug;
+
 // === ADDITIONAL TESTS - CURRENTLY DISABLED ===
 // These tests are temporarily disabled but can be re-enabled as needed.
 // The comprehensive_e2e_tests module provides sufficient coverage for completion.

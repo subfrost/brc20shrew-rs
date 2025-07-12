@@ -37,6 +37,7 @@ protobuf = "3.0"
 # Metashrew dependencies (using git since not published to crates.io)
 metashrew-core = { git = "https://github.com/sandshrewmetaprotocols/metashrew", branch = "master", default-features = false }
 metashrew-support = { git = "https://github.com/sandshrewmetaprotocols/metashrew", branch = "master", default-features = false }
+ordinals = { git = "https://github.com/ordinals/ord" }
 
 [dev-dependencies]
 # Testing utilities

@@ -44,6 +44,12 @@
 //! - Handles both blessed and cursed inscriptions
 //! - Supports inscription numbering and sequence tracking
 
+#[allow(unused_imports)]
+use {
+    metashrew_core::{println, stdio::stdout},
+    std::fmt::Write
+};
+
 use crate::{
     inscription::{InscriptionId, InscriptionEntry},
     tables::*,
@@ -321,17 +327,25 @@ pub fn get_content(request: &GetContentRequest) -> Result<ContentResponse, Strin
     // Check if this inscription delegates to another
     let delegate_table = InscriptionDelegateTable::new();
     let content_id_str = if let Some(delegate_id_str) = delegate_table.get(&inscription_id_str) {
-        // delegate_table.get() returns Option<String>
+        // DEBUG: Log delegation lookup
+        println!("DEBUG get_content: Found delegation from {} to {}", inscription_id_str, delegate_id_str);
+        // Use delegate's content
         delegate_id_str
     } else {
+        // DEBUG: Log no delegation found
+        println!("DEBUG get_content: No delegation found for {}", inscription_id_str);
         // Use own content
         inscription_id_str.clone()
     };
 
     // Get content
     let content_table = InscriptionContentTable::new();
+    println!("DEBUG get_content: Looking for content with ID: {}", content_id_str);
     if let Some(content) = content_table.get(&content_id_str) {
+        println!("DEBUG get_content: Found content with length: {}", content.len());
         response.content = content;
+    } else {
+        println!("DEBUG get_content: No content found for ID: {}", content_id_str);
     }
 
     // Get content type (from the content source, which could be delegate)

@@ -215,9 +215,9 @@ pub fn create_inscription_transaction(
 pub fn create_inscription_witness(content: &[u8], content_type: &str) -> Witness {
     let mut witness = Witness::new();
     
-    // Create inscription envelope in witness
-    // This follows the standard inscription format:
-    // OP_PUSHBYTES_0 OP_IF "ord" OP_1 <content-type> OP_0 <content> OP_ENDIF
+    // Create inscription envelope in witness using raw byte format
+    // This follows the corrected inscription format:
+    // OP_PUSHBYTES_0 OP_IF "ord" field_tag length data field_tag length data OP_ENDIF
     let mut script = Vec::new();
     
     // OP_PUSHBYTES_0
@@ -227,24 +227,18 @@ pub fn create_inscription_witness(content: &[u8], content_type: &str) -> Witness
     // "ord" tag
     script.push(0x03); // push 3 bytes
     script.extend_from_slice(b"ord");
-    // OP_1 (content type tag)
-    script.push(0x51);
-    // Content type
-    script.push(content_type.len() as u8);
-    script.extend_from_slice(content_type.as_bytes());
-    // OP_0 (content tag)
-    script.push(0x00);
-    // Content (split into chunks if needed)
-    if content.len() <= 520 {
-        script.push(content.len() as u8);
-        script.extend_from_slice(content);
-    } else {
-        // Split large content into chunks
-        for chunk in content.chunks(520) {
-            script.push(chunk.len() as u8);
-            script.extend_from_slice(chunk);
-        }
-    }
+    
+    // Content type field (tag 1)
+    script.push(0x01); // field tag 1
+    script.push(content_type.len() as u8); // length
+    script.extend_from_slice(content_type.as_bytes()); // data
+    
+    // Content field (tag 0)
+    script.push(0x00); // field tag 0
+    // Content length and data
+    script.push(content.len() as u8);
+    script.extend_from_slice(content);
+    
     // OP_ENDIF
     script.push(0x68);
     
@@ -401,178 +395,131 @@ pub fn create_test_transaction() -> Transaction {
     }
 }
 
-/// Create a simple inscription envelope with content type and body
+/// Create a simple inscription envelope with content type and body using our ord_inscriptions module
 pub fn create_inscription_envelope(content_type: &[u8], body: &[u8]) -> Witness {
-    // Bitcoin opcodes - currently unused but may be needed for future script building
-    // use bitcoin::opcodes::all::{OP_PUSHBYTES_0, OP_IF, OP_ENDIF};
+    use crate::ord_inscriptions::Inscription;
     
-    let mut script_bytes = Vec::new();
+    println!("DEBUG helper: Creating envelope with {} content bytes", body.len());
     
-    // OP_PUSHBYTES_0
-    script_bytes.push(0x00);
-    // OP_IF
-    script_bytes.push(0x63);
-    // "ord" tag
-    script_bytes.push(0x03);
-    script_bytes.extend_from_slice(b"ord");
+    // Create inscription using our ported ord inscription code
+    let inscription = Inscription {
+        content_type: if content_type.is_empty() {
+            None
+        } else {
+            Some(content_type.to_vec())
+        },
+        body: Some(body.to_vec()),
+        ..Default::default()
+    };
     
-    if !content_type.is_empty() {
-        // Content type tag (1)
-        script_bytes.push(0x01);
-        // Content type length and data
-        if content_type.len() <= 75 {
-            script_bytes.push(content_type.len() as u8);
+    // Use the ord inscription's to_witness method
+    let witness = inscription.to_witness();
+    
+    println!("DEBUG helper: Witness created with {} elements", witness.len());
+    for (i, element) in witness.iter().enumerate() {
+        println!("DEBUG helper: Witness element {}: {} bytes", i, element.len());
+        if i == 0 { // Always print script for debugging
+            println!("DEBUG helper: Script bytes: {:?}", element);
         }
-        script_bytes.extend_from_slice(content_type);
     }
     
-    if !body.is_empty() {
-        // Content tag (0)
-        script_bytes.push(0x00);
-        // Content length and data
-        if body.len() <= 75 {
-            script_bytes.push(body.len() as u8);
-        }
-        script_bytes.extend_from_slice(body);
-    }
-    
-    // OP_ENDIF
-    script_bytes.push(0x68);
-    
-    Witness::from_slice(&[script_bytes, Vec::new()])
+    witness
 }
 
 /// Create inscription envelope with metadata
 pub fn create_inscription_envelope_with_metadata(content_type: &[u8], body: &[u8], metadata: Option<&[u8]>) -> Witness {
-    let mut script_bytes = Vec::new();
+    use crate::ord_inscriptions::Inscription;
     
-    // OP_PUSHBYTES_0
-    script_bytes.push(0x00);
-    // OP_IF
-    script_bytes.push(0x63);
-    // "ord" tag
-    script_bytes.push(0x03);
-    script_bytes.extend_from_slice(b"ord");
+    println!("DEBUG helper: Creating metadata envelope with {} content bytes", body.len());
     
-    if !content_type.is_empty() {
-        // Content type tag (1)
-        script_bytes.push(0x01);
-        if content_type.len() <= 75 {
-            script_bytes.push(content_type.len() as u8);
+    // Create inscription using our ported ord inscription code
+    let inscription = Inscription {
+        content_type: if content_type.is_empty() {
+            None
+        } else {
+            Some(content_type.to_vec())
+        },
+        metadata: metadata.map(|m| m.to_vec()),
+        body: Some(body.to_vec()),
+        ..Default::default()
+    };
+    
+    // Use the ord inscription's to_witness method
+    let witness = inscription.to_witness();
+    
+    println!("DEBUG helper: Metadata witness created with {} elements", witness.len());
+    for (i, element) in witness.iter().enumerate() {
+        println!("DEBUG helper: Metadata witness element {}: {} bytes", i, element.len());
+        if i == 0 { // Always print script for debugging
+            println!("DEBUG helper: Metadata script bytes: {:?}", element);
         }
-        script_bytes.extend_from_slice(content_type);
     }
     
-    if let Some(meta) = metadata {
-        // Metadata tag (5)
-        script_bytes.push(0x05);
-        if meta.len() <= 75 {
-            script_bytes.push(meta.len() as u8);
-        }
-        script_bytes.extend_from_slice(meta);
-    }
-    
-    if !body.is_empty() {
-        // Content tag (0)
-        script_bytes.push(0x00);
-        if body.len() <= 75 {
-            script_bytes.push(body.len() as u8);
-        }
-        script_bytes.extend_from_slice(body);
-    }
-    
-    // OP_ENDIF
-    script_bytes.push(0x68);
-    
-    Witness::from_slice(&[script_bytes, Vec::new()])
+    witness
 }
 
 /// Create inscription envelope with parent reference
 pub fn create_inscription_envelope_with_parent(content_type: &[u8], body: &[u8], parent_id: &str) -> Witness {
-    let mut script_bytes = Vec::new();
+    use crate::ord_inscriptions::Inscription;
     
-    // OP_PUSHBYTES_0
-    script_bytes.push(0x00);
-    // OP_IF
-    script_bytes.push(0x63);
-    // "ord" tag
-    script_bytes.push(0x03);
-    script_bytes.extend_from_slice(b"ord");
+    println!("DEBUG helper: Creating parent envelope with {} content bytes, parent: {}", body.len(), parent_id);
     
-    if !content_type.is_empty() {
-        // Content type tag (1)
-        script_bytes.push(0x01);
-        if content_type.len() <= 75 {
-            script_bytes.push(content_type.len() as u8);
+    // Create inscription using our ported ord inscription code
+    let inscription = Inscription {
+        content_type: if content_type.is_empty() {
+            None
+        } else {
+            Some(content_type.to_vec())
+        },
+        parents: vec![parent_id.as_bytes().to_vec()], // parents is a Vec<Vec<u8>>
+        body: Some(body.to_vec()),
+        ..Default::default()
+    };
+    
+    // Use the ord inscription's to_witness method
+    let witness = inscription.to_witness();
+    
+    println!("DEBUG helper: Parent witness created with {} elements", witness.len());
+    for (i, element) in witness.iter().enumerate() {
+        println!("DEBUG helper: Parent witness element {}: {} bytes", i, element.len());
+        if i == 0 { // Always print script for debugging
+            println!("DEBUG helper: Parent script bytes: {:?}", element);
         }
-        script_bytes.extend_from_slice(content_type);
     }
     
-    // Add parent reference (tag 3)
-    script_bytes.push(0x03);
-    let parent_bytes = parent_id.as_bytes();
-    if parent_bytes.len() <= 75 {
-        script_bytes.push(parent_bytes.len() as u8);
-    }
-    script_bytes.extend_from_slice(parent_bytes);
-    
-    if !body.is_empty() {
-        // Content tag (0)
-        script_bytes.push(0x00);
-        if body.len() <= 75 {
-            script_bytes.push(body.len() as u8);
-        }
-        script_bytes.extend_from_slice(body);
-    }
-    
-    // OP_ENDIF
-    script_bytes.push(0x68);
-    
-    Witness::from_slice(&[script_bytes, Vec::new()])
+    witness
 }
 
 /// Create inscription envelope with delegate reference
 pub fn create_inscription_envelope_with_delegate(content_type: &[u8], body: &[u8], delegate_id: &str) -> Witness {
-    let mut script_bytes = Vec::new();
+    use crate::ord_inscriptions::Inscription;
     
-    // OP_PUSHBYTES_0
-    script_bytes.push(0x00);
-    // OP_IF
-    script_bytes.push(0x63);
-    // "ord" tag
-    script_bytes.push(0x03);
-    script_bytes.extend_from_slice(b"ord");
+    println!("DEBUG helper: Creating delegate envelope with {} content bytes, delegate: {}", body.len(), delegate_id);
     
-    if !content_type.is_empty() {
-        // Content type tag (1)
-        script_bytes.push(0x01);
-        if content_type.len() <= 75 {
-            script_bytes.push(content_type.len() as u8);
+    // Create inscription using our ported ord inscription code
+    let inscription = Inscription {
+        content_type: if content_type.is_empty() {
+            None
+        } else {
+            Some(content_type.to_vec())
+        },
+        delegate: Some(delegate_id.as_bytes().to_vec()),
+        body: Some(body.to_vec()),
+        ..Default::default()
+    };
+    
+    // Use the ord inscription's to_witness method
+    let witness = inscription.to_witness();
+    
+    println!("DEBUG helper: Delegate witness created with {} elements", witness.len());
+    for (i, element) in witness.iter().enumerate() {
+        println!("DEBUG helper: Delegate witness element {}: {} bytes", i, element.len());
+        if i == 0 { // Always print script for debugging
+            println!("DEBUG helper: Delegate script bytes: {:?}", element);
         }
-        script_bytes.extend_from_slice(content_type);
     }
     
-    // Add delegate reference (tag 11)
-    script_bytes.push(0x0B);
-    let delegate_bytes = delegate_id.as_bytes();
-    if delegate_bytes.len() <= 75 {
-        script_bytes.push(delegate_bytes.len() as u8);
-    }
-    script_bytes.extend_from_slice(delegate_bytes);
-    
-    if !body.is_empty() {
-        // Content tag (0)
-        script_bytes.push(0x00);
-        if body.len() <= 75 {
-            script_bytes.push(body.len() as u8);
-        }
-        script_bytes.extend_from_slice(body);
-    }
-    
-    // OP_ENDIF
-    script_bytes.push(0x68);
-    
-    Witness::from_slice(&[script_bytes, Vec::new()])
+    witness
 }
 
 /// Create a reveal transaction that spends from commit transaction

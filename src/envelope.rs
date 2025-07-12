@@ -1,3 +1,9 @@
+#[allow(unused_imports)]
+use {
+    metashrew_core::{println, stdio::stdout},
+    std::fmt::Write
+};
+
 use bitcoin::{
     opcodes::all::*,
     script::{Instruction, Instructions},
@@ -55,13 +61,22 @@ impl Inscription {
     }
 
     pub fn delegate_id(&self) -> Option<crate::inscription::InscriptionId> {
+        println!("DEBUG delegate_id: Called with delegate field: {:?}", self.delegate);
         self.delegate.as_ref().and_then(|bytes| {
+            println!("DEBUG delegate_id: Processing {} bytes: {:?}", bytes.len(), bytes);
             if bytes.len() == 36 {
-                crate::inscription::InscriptionId::from_bytes(bytes).ok()
+                println!("DEBUG delegate_id: Trying binary format (36 bytes)");
+                let result = crate::inscription::InscriptionId::from_bytes(bytes).ok();
+                println!("DEBUG delegate_id: Binary parse result: {:?}", result);
+                result
             } else {
                 // Try parsing as string (for test helpers)
+                println!("DEBUG delegate_id: Trying string format");
                 let id_str = String::from_utf8(bytes.clone()).ok()?;
-                crate::inscription::InscriptionId::from_str(&id_str).ok()
+                println!("DEBUG delegate_id: String: {}", id_str);
+                let result = crate::inscription::InscriptionId::from_str(&id_str).ok();
+                println!("DEBUG delegate_id: String parse result: {:?}", result);
+                result
             }
         })
     }
@@ -122,14 +137,11 @@ pub fn parse_envelope_from_script(
     input: usize,
     offset: usize,
 ) -> Result<Option<Envelope>, ParseError> {
-    // Try parsing as Bitcoin script instructions first
-    if let Ok(envelope) = parse_envelope_from_instructions(script, input, offset) {
-        if envelope.is_some() {
-            return Ok(envelope);
-        }
-    }
+    println!("DEBUG: parse_envelope_from_script called with script length: {}", script.len());
     
-    // If that fails, try parsing as raw bytes (for test helpers)
+    // For debugging, skip script instruction parsing and go directly to raw bytes
+    // This matches what the manual test does
+    println!("DEBUG: Using raw bytes parsing directly");
     parse_envelope_from_raw_bytes(script.as_bytes(), input, offset)
 }
 
@@ -184,20 +196,22 @@ fn parse_envelope_from_raw_bytes(
         if bytes[pos] == 0x00 && bytes[pos + 1] == 0x63 &&
            bytes[pos + 2] == 0x03 && &bytes[pos + 3..pos + 6] == b"ord" {
             // Found inscription envelope
+            println!("DEBUG: Found envelope at position {}", pos);
             pos += 6; // Skip past 0x00 0x63 0x03 "ord"
             
-            // Find the end of the envelope (OP_ENDIF = 0x68)
-            let mut end_pos = pos;
-            while end_pos < bytes.len() && bytes[end_pos] != 0x68 {
-                end_pos += 1;
-            }
+            // The OP_ENDIF should be at the very end of the script
+            // So we use the entire remaining script as field data
+            let end_pos = bytes.len() - 1; // Exclude the final OP_ENDIF byte
             
-            if let Some(inscription) = parse_inscription_from_raw_bytes(&bytes[pos..end_pos])? {
+            println!("DEBUG: Envelope field data from {} to {} ({} bytes): {:?}",
+                     pos, end_pos, end_pos - pos, &bytes[pos..end_pos]);
+            
+            if let Some(inscription) = parse_inscription_fields(&bytes[pos..end_pos])? {
                 // Debug: Check if body was parsed
                 if let Some(body) = &inscription.body {
-                    eprintln!("DEBUG: Envelope found with body length: {}", body.len());
+                    println!("DEBUG: Envelope found with body length: {}", body.len());
                 } else {
-                    eprintln!("DEBUG: Envelope found but no body");
+                    println!("DEBUG: Envelope found but no body");
                 }
                 
                 return Ok(Some(Envelope {
@@ -225,43 +239,62 @@ fn parse_inscription_from_instructions(
     let mut body_started = false;
     let mut found_ord_tag = false;
 
-    while let Some(instruction) = instructions.next() {
-        let instruction = instruction.map_err(|_| ParseError::InvalidScript)?;
+    println!("DEBUG: Starting instruction parsing");
+
+    while let Some(instruction_result) = instructions.next() {
+        let instruction = match instruction_result {
+            Ok(inst) => inst,
+            Err(e) => {
+                println!("DEBUG: Script instruction error: {:?}", e);
+                return Err(ParseError::InvalidScript);
+            }
+        };
+
+        println!("DEBUG: Processing instruction: {:?}", instruction);
 
         match instruction {
             Instruction::Op(OP_ENDIF) => {
-                // End of inscription envelope
+                println!("DEBUG: Found OP_ENDIF, ending envelope");
                 break;
             }
             Instruction::PushBytes(bytes) if !found_ord_tag => {
+                println!("DEBUG: Looking for 'ord' tag, found: {:?}", bytes.as_bytes());
                 // Check for "ord" protocol identifier
                 if bytes.as_bytes() == b"ord" {
+                    println!("DEBUG: Found 'ord' protocol identifier");
                     found_ord_tag = true;
                     continue;
                 }
             }
             Instruction::PushBytes(bytes) if found_ord_tag => {
+                let bytes_vec = bytes.as_bytes().to_vec();
+                println!("DEBUG: Processing push bytes: {:?}", bytes_vec);
+                
                 if current_field.is_some() {
                     // This is field data
                     let field = current_field.take().unwrap();
-                    let field_bytes = bytes.as_bytes().to_vec();
+                    
+                    println!("DEBUG: Storing field {:?} with data: {:?}", field, bytes_vec);
                     
                     if fields.contains_key(&field) {
                         inscription.duplicate_field = true;
                     }
                     
-                    fields.insert(field.clone(), field_bytes.clone());
+                    fields.insert(field.clone(), bytes_vec.clone());
                     
                     // Parse known fields
                     match field.as_slice() {
-                        [1] => inscription.content_type = Some(field_bytes),
-                        [2] => inscription.pointer = Some(field_bytes),
-                        [3] => inscription.parent = Some(field_bytes),
-                        [5] => inscription.metadata = Some(field_bytes),
-                        [7] => inscription.metaprotocol = Some(field_bytes),
-                        [9] => inscription.content_encoding = Some(field_bytes),
-                        [11] => inscription.delegate = Some(field_bytes),
-                        [13] => inscription.rune = Some(field_bytes),
+                        [1] => {
+                            println!("DEBUG: Setting content_type");
+                            inscription.content_type = Some(bytes_vec);
+                        }
+                        [2] => inscription.pointer = Some(bytes_vec),
+                        [3] => inscription.parent = Some(bytes_vec),
+                        [5] => inscription.metadata = Some(bytes_vec),
+                        [7] => inscription.metaprotocol = Some(bytes_vec),
+                        [9] => inscription.content_encoding = Some(bytes_vec),
+                        [11] => inscription.delegate = Some(bytes_vec),
+                        [13] => inscription.rune = Some(bytes_vec),
                         tag if tag.len() == 1 && tag[0] % 2 == 0 => {
                             // Unrecognized even field
                             inscription.unrecognized_even_field = true;
@@ -270,36 +303,49 @@ fn parse_inscription_from_instructions(
                     }
                 } else {
                     // This could be a field tag or body content
-                    let bytes_vec = bytes.as_bytes().to_vec();
+                    println!("DEBUG: Potential field tag or body: {:?}", bytes_vec);
                     
-                    // Check if this is the body separator (tag 0)
-                    if bytes_vec == vec![0] {
+                    // Check if this is the body separator (empty push = tag 0)
+                    if bytes_vec.is_empty() {
+                        println!("DEBUG: Found body separator (empty push = tag 0)");
                         body_started = true;
                         // Collect all remaining pushdata as body
                         let mut body = Vec::new();
-                        while let Some(instruction) = instructions.next() {
-                            let instruction = instruction.map_err(|_| ParseError::InvalidScript)?;
+                        while let Some(instruction_result) = instructions.next() {
+                            let instruction = instruction_result.map_err(|_| ParseError::InvalidScript)?;
                             
                             match instruction {
-                                Instruction::Op(OP_ENDIF) => break,
+                                Instruction::Op(OP_ENDIF) => {
+                                    println!("DEBUG: Found OP_ENDIF in body, ending");
+                                    break;
+                                }
                                 Instruction::PushBytes(bytes) => {
+                                    println!("DEBUG: Adding body chunk: {:?}", bytes.as_bytes());
                                     body.extend_from_slice(bytes.as_bytes());
                                 }
-                                _ => {} // Ignore other opcodes in body
+                                _ => {
+                                    println!("DEBUG: Ignoring opcode in body: {:?}", instruction);
+                                }
                             }
                         }
                         
                         if !body.is_empty() {
+                            println!("DEBUG: Setting body with {} bytes", body.len());
                             inscription.body = Some(body);
+                        } else {
+                            println!("DEBUG: Setting empty body");
+                            inscription.body = Some(Vec::new());
                         }
                         break;
                     } else {
                         // This is a field tag
+                        println!("DEBUG: Setting current field tag: {:?}", bytes_vec);
                         current_field = Some(bytes_vec);
                     }
                 }
             }
             _ => {
+                println!("DEBUG: Unhandled instruction: {:?}", instruction);
                 if current_field.is_some() {
                     // Incomplete field
                     inscription.incomplete_field = true;
@@ -313,6 +359,10 @@ fn parse_inscription_from_instructions(
     if current_field.is_some() {
         inscription.incomplete_field = true;
     }
+
+    println!("DEBUG: Found ord tag: {}", found_ord_tag);
+    println!("DEBUG: Final inscription: content_type={:?}, body={:?}",
+             inscription.content_type, inscription.body.as_ref().map(|b| b.len()));
 
     // Only return inscription if we found the "ord" tag
     if found_ord_tag {
@@ -330,80 +380,192 @@ fn parse_inscription_from_script_instructions(
 }
 
 /// Parse inscription from raw bytes (for test helpers)
-fn parse_inscription_from_raw_bytes(bytes: &[u8]) -> Result<Option<Inscription>, ParseError> {
+pub fn parse_inscription_from_raw_bytes(bytes: &[u8]) -> Result<Option<Inscription>, ParseError> {
+    println!("DEBUG: parse_inscription_from_raw_bytes called with {} bytes: {:?}", bytes.len(), bytes);
+    
+    // Skip the envelope header: 0x00 0x63 0x03 "ord"
+    let mut pos = 0;
+    
+    // Look for envelope pattern: 0x00 0x63 0x03 "ord"
+    while pos + 5 < bytes.len() {
+        if bytes[pos] == 0x00 && bytes[pos + 1] == 0x63 &&
+           bytes[pos + 2] == 0x03 && &bytes[pos + 3..pos + 6] == b"ord" {
+            // Found inscription envelope, skip to the field data
+            pos += 6; // Skip past 0x00 0x63 0x03 "ord"
+            break;
+        }
+        pos += 1;
+    }
+    
+    if pos + 5 >= bytes.len() {
+        println!("DEBUG: No envelope pattern found");
+        return Ok(None);
+    }
+    
+    // Find the end of the envelope (OP_ENDIF = 0x68)
+    let mut end_pos = pos;
+    while end_pos < bytes.len() && bytes[end_pos] != 0x68 {
+        end_pos += 1;
+    }
+    
+    if end_pos >= bytes.len() {
+        println!("DEBUG: No OP_ENDIF found");
+        return Ok(None);
+    }
+    
+    // Parse the field data between pos and end_pos
+    let field_data = &bytes[pos..end_pos];
+    parse_inscription_fields(field_data)
+}
+
+/// Parse inscription fields from raw field data (no envelope wrapper)
+fn parse_inscription_fields(field_data: &[u8]) -> Result<Option<Inscription>, ParseError> {
+    println!("DEBUG: parse_inscription_fields called with {} bytes: {:?}", field_data.len(), field_data);
+    
     let mut inscription = Inscription::new();
     let mut pos = 0;
     
-    while pos < bytes.len() {
-        // Get the field tag
-        if pos >= bytes.len() {
+    // Parse Bitcoin script push operations: [length][data][length][data]...
+    while pos < field_data.len() {
+        // Read the length of the next push operation
+        if pos >= field_data.len() {
             break;
         }
-        let field_tag = bytes[pos];
+        
+        let push_length = field_data[pos] as usize;
         pos += 1;
         
-        // Handle special case for body content (tag 0)
-        if field_tag == 0 {
-            // For body content, read the rest as body (may be length-prefixed)
-            let mut body_data = Vec::new();
+        println!("DEBUG: Push operation length: {} at position {}", push_length, pos - 1);
+        
+        if pos + push_length > field_data.len() {
+            println!("DEBUG: Not enough data for push operation, breaking");
+            break;
+        }
+        
+        let push_data = &field_data[pos..pos + push_length];
+        pos += push_length;
+        
+        println!("DEBUG: Push data: {:?}", push_data);
+        
+        // If this is a single-byte push, it might be a tag
+        if push_length == 1 {
+            let tag = push_data[0];
+            println!("DEBUG: Found tag: {}", tag);
             
-            // Check if next byte is a length byte
-            if pos < bytes.len() {
-                let potential_length = bytes[pos];
-                // If it looks like a valid length byte (reasonable size and fits in remaining data)
-                if potential_length <= 75 && pos + 1 + potential_length as usize <= bytes.len() {
-                    pos += 1; // Skip length byte
-                    let length = potential_length as usize;
-                    body_data.extend_from_slice(&bytes[pos..pos + length]);
-                    pos += length;
-                } else {
-                    // Read all remaining bytes as body
-                    body_data.extend_from_slice(&bytes[pos..]);
-                    pos = bytes.len();
+            // Read the next push operation which should be the value
+            if pos >= field_data.len() {
+                println!("DEBUG: No value for tag {}", tag);
+                break;
+            }
+            
+            let value_length = field_data[pos] as usize;
+            pos += 1;
+            
+            if pos + value_length > field_data.len() {
+                println!("DEBUG: Not enough data for tag {} value", tag);
+                break;
+            }
+            
+            let value = &field_data[pos..pos + value_length];
+            pos += value_length;
+            
+            println!("DEBUG: Tag {} value (length {}): {:?}", tag, value_length, value);
+            
+            match tag {
+                1 => {
+                    println!("DEBUG: Setting content_type");
+                    inscription.content_type = Some(value.to_vec());
+                }
+                2 => inscription.pointer = Some(value.to_vec()),
+                3 => inscription.parent = Some(value.to_vec()),
+                5 => inscription.metadata = Some(value.to_vec()),
+                7 => inscription.metaprotocol = Some(value.to_vec()),
+                9 => inscription.content_encoding = Some(value.to_vec()),
+                11 => {
+                    println!("DEBUG: Setting delegate");
+                    inscription.delegate = Some(value.to_vec());
+                }
+                13 => inscription.rune = Some(value.to_vec()),
+                tag if tag % 2 == 0 => {
+                    // Unrecognized even field
+                    inscription.unrecognized_even_field = true;
+                }
+                _ => {
+                    println!("DEBUG: Unknown tag {}, skipping", tag);
                 }
             }
+        } else if push_length == 0 {
+            // Empty push - this is the body tag!
+            println!("DEBUG: Found empty push (body tag)");
             
-            if !body_data.is_empty() {
-                inscription.body = Some(body_data);
+            // Body content may be chunked into multiple push operations
+            // Read all subsequent push operations as body chunks
+            let mut body_content = Vec::new();
+            
+            while pos < field_data.len() {
+                let opcode = field_data[pos];
+                pos += 1;
+                
+                let chunk_len = if opcode <= 75 {
+                    // OP_PUSHBYTES_N (1-75): opcode itself is the length
+                    opcode as usize
+                } else if opcode == 76 {
+                    // OP_PUSHDATA1: next byte is the length
+                    if pos >= field_data.len() {
+                        println!("DEBUG: OP_PUSHDATA1 but no length byte");
+                        break;
+                    }
+                    let len = field_data[pos] as usize;
+                    pos += 1;
+                    len
+                } else if opcode == 77 {
+                    // OP_PUSHDATA2: next 2 bytes are the length (little-endian)
+                    if pos + 1 >= field_data.len() {
+                        println!("DEBUG: OP_PUSHDATA2 but not enough length bytes");
+                        break;
+                    }
+                    let len = u16::from_le_bytes([field_data[pos], field_data[pos + 1]]) as usize;
+                    pos += 2;
+                    len
+                } else if opcode == 78 {
+                    // OP_PUSHDATA4: next 4 bytes are the length (little-endian)
+                    if pos + 3 >= field_data.len() {
+                        println!("DEBUG: OP_PUSHDATA4 but not enough length bytes");
+                        break;
+                    }
+                    let len = u32::from_le_bytes([
+                        field_data[pos], field_data[pos + 1],
+                        field_data[pos + 2], field_data[pos + 3]
+                    ]) as usize;
+                    pos += 4;
+                    len
+                } else {
+                    println!("DEBUG: Unknown opcode in body: {}", opcode);
+                    break;
+                };
+                
+                if pos + chunk_len > field_data.len() {
+                    println!("DEBUG: Chunk extends beyond available data, treating remaining as final chunk");
+                    body_content.extend_from_slice(&field_data[pos..]);
+                    break;
+                }
+                
+                let chunk_data = &field_data[pos..pos + chunk_len];
+                println!("DEBUG: Body chunk (opcode {}, length {}): {:?}", opcode, chunk_len, chunk_data);
+                body_content.extend_from_slice(chunk_data);
+                pos += chunk_len;
             }
-            break; // Body is the last field
-        }
-        
-        // For all other fields, read length-prefixed data
-        if pos >= bytes.len() {
-            inscription.incomplete_field = true;
-            break;
-        }
-        
-        let length = bytes[pos] as usize;
-        pos += 1;
-        
-        // Ensure we don't read beyond bounds
-        if pos + length > bytes.len() {
-            inscription.incomplete_field = true;
-            break;
-        }
-        
-        let field_data = bytes[pos..pos + length].to_vec();
-        pos += length;
-        
-        // Store the field based on tag
-        match field_tag {
-            1 => inscription.content_type = Some(field_data),
-            2 => inscription.pointer = Some(field_data),
-            3 => inscription.parent = Some(field_data),
-            5 => inscription.metadata = Some(field_data),
-            7 => inscription.metaprotocol = Some(field_data),
-            9 => inscription.content_encoding = Some(field_data),
-            11 => inscription.delegate = Some(field_data),
-            13 => inscription.rune = Some(field_data),
-            tag if tag % 2 == 0 => {
-                // Unrecognized even field
-                inscription.unrecognized_even_field = true;
-            }
-            _ => {} // Unrecognized odd field (ignored)
+            
+            println!("DEBUG: Total body content (length {}): {:?}", body_content.len(), body_content);
+            inscription.body = Some(body_content);
+            break; // Body is the last field, exit loop
+        } else {
+            println!("DEBUG: Multi-byte push data (not a tag): {:?}", push_data);
         }
     }
+    
+    println!("DEBUG: Final inscription: content_type={:?}, delegate={:?}, body={:?}",
+             inscription.content_type, inscription.delegate, inscription.body);
     
     Ok(Some(inscription))
 }
@@ -548,7 +710,7 @@ mod tests {
         // OP_ENDIF
         script_bytes.push(0x68);
         
-        println!("Script bytes: {:?}", script_bytes);
+        std::println!("Script bytes: {:?}", script_bytes);
         
         let script = bitcoin::ScriptBuf::from_bytes(script_bytes);
         let envelope = parse_envelope_from_script(&script, 0, 0).unwrap();
@@ -560,12 +722,105 @@ mod tests {
         // Check metadata
         assert!(inscription.metadata.is_some(), "Should have metadata");
         let parsed_metadata = inscription.metadata.as_ref().unwrap();
-        println!("Expected metadata: {:?}", metadata);
-        println!("Parsed metadata: {:?}", parsed_metadata);
+        std::println!("Expected metadata: {:?}", metadata);
+        std::println!("Parsed metadata: {:?}", parsed_metadata);
         assert_eq!(parsed_metadata, metadata, "Metadata should match exactly");
         
         // Check content
         assert!(inscription.body.is_some(), "Should have body");
         assert_eq!(inscription.body.as_ref().unwrap(), content);
     }
+
+    #[test]
+    fn test_parse_delegation_envelope() {
+        // Test the exact format created by create_inscription_envelope_with_delegate
+        let delegate_id = "test_delegate_id";
+        let mut script_bytes = Vec::new();
+        
+        // OP_PUSHBYTES_0
+        script_bytes.push(0x00);
+        // OP_IF
+        script_bytes.push(0x63);
+        // "ord" tag
+        script_bytes.push(0x03);
+        script_bytes.extend_from_slice(b"ord");
+        // Content type tag (1)
+        script_bytes.push(0x01);
+        script_bytes.push(0x0A); // "text/plain" length
+        script_bytes.extend_from_slice(b"text/plain");
+        // Delegate reference (tag 11)
+        script_bytes.push(0x0B);
+        script_bytes.push(delegate_id.len() as u8);
+        script_bytes.extend_from_slice(delegate_id.as_bytes());
+        // Content tag (0) - empty content for delegating inscription
+        script_bytes.push(0x00);
+        script_bytes.push(0x00); // Empty content
+        // OP_ENDIF
+        script_bytes.push(0x68);
+        
+        std::println!("Delegation script bytes: {:?}", script_bytes);
+        
+        let script = bitcoin::ScriptBuf::from_bytes(script_bytes);
+        let envelope = parse_envelope_from_script(&script, 0, 0).unwrap();
+        assert!(envelope.is_some(), "Should parse delegation envelope");
+        
+        let envelope = envelope.unwrap();
+        let inscription = &envelope.payload;
+        
+        // Check delegate field
+        assert!(inscription.delegate.is_some(), "Should have delegate field");
+        let delegate_bytes = inscription.delegate.as_ref().unwrap();
+        let delegate_str = String::from_utf8(delegate_bytes.clone()).unwrap();
+        assert_eq!(delegate_str, delegate_id, "Delegate ID should match");
+        
+        // Check content (should be empty for delegating inscription)
+        assert!(inscription.body.is_some(), "Should have body field");
+        let body = inscription.body.as_ref().unwrap();
+        assert!(body.is_empty(), "Delegating inscription should have empty content");
+    }
+
+    #[test]
+    fn test_parse_large_content_envelope() {
+        // Test parsing large content that gets split into chunks
+        let large_content = b"This is the actual content that will be delegated";
+        let content_type = b"text/plain";
+        
+        let mut script_bytes = Vec::new();
+        
+        // OP_PUSHBYTES_0
+        script_bytes.push(0x00);
+        // OP_IF
+        script_bytes.push(0x63);
+        // "ord" tag
+        script_bytes.push(0x03);
+        script_bytes.extend_from_slice(b"ord");
+        // Content type tag (1)
+        script_bytes.push(0x01);
+        script_bytes.push(content_type.len() as u8);
+        script_bytes.extend_from_slice(content_type);
+        // Content tag (0)
+        script_bytes.push(0x00);
+        // Content length and data
+        script_bytes.push(large_content.len() as u8);
+        script_bytes.extend_from_slice(large_content);
+        // OP_ENDIF
+        script_bytes.push(0x68);
+        
+        std::println!("Large content script bytes: {:?}", script_bytes);
+        
+        let script = bitcoin::ScriptBuf::from_bytes(script_bytes);
+        let envelope = parse_envelope_from_script(&script, 0, 0).unwrap();
+        assert!(envelope.is_some(), "Should parse large content envelope");
+        
+        let envelope = envelope.unwrap();
+        let inscription = &envelope.payload;
+        
+        // Check content
+        assert!(inscription.body.is_some(), "Should have body");
+        let body = inscription.body.as_ref().unwrap();
+        std::println!("Parsed body: {:?}", body);
+        std::println!("Expected body: {:?}", large_content);
+        assert_eq!(body, large_content, "Content should match exactly");
+    }
+
 }

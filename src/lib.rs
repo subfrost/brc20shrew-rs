@@ -7,6 +7,7 @@ pub mod envelope;
 pub mod indexer;
 pub mod view;
 pub mod message;
+pub mod ord_inscriptions;
 use metashrew_core::{input, flush};
 
 // Re-export protobuf types
