@@ -49,15 +49,6 @@ enum Charm {
   BURNED = 11;
 }
 
-// Rarity enumeration
-enum Rarity {
-  COMMON = 0;
-  UNCOMMON = 1;
-  RARE = 2;
-  EPIC = 3;
-  LEGENDARY = 4;
-  MYTHIC = 5;
-}
 
 // Generic error response
 message ErrorResponse {
@@ -254,7 +245,6 @@ message SatResponse {
   uint32 epoch = 7;
   uint32 period = 8;
   uint64 offset = 9;
-  Rarity rarity = 10;
   string percentile = 11;
   repeated Charm charms = 12;
   repeated InscriptionId inscriptions = 13;

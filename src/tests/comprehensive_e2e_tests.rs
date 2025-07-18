@@ -97,11 +97,11 @@ fn test_single_inscription_debug() -> Result<()> {
     
     // Test content retrieval
     let inscription_index = 0;
-    let mut get_content_req = GetContentRequest::new();
-    let mut proto_id = InscriptionId::new();
+    let mut get_content_req = GetContentRequest::default();
+    let mut proto_id = InscriptionId::default();
     proto_id.txid = tx.txid().to_byte_array().to_vec();
     proto_id.index = inscription_index;
-    get_content_req.id = protobuf::MessageField::some(proto_id.clone());
+    get_content_req.id = Some(proto_id.clone());
     
     let content_response = get_content(&get_content_req).map_err(|e| anyhow::anyhow!(e))?;
     
@@ -163,11 +163,11 @@ fn test_complete_inscription_lifecycle() -> Result<()> {
     
     // === QUERYING PHASE ===
     // Test get_inscriptions view function
-    let mut get_inscriptions_req = GetInscriptionsRequest::new();
-    let mut pagination = PaginationRequest::new();
+    let mut get_inscriptions_req = GetInscriptionsRequest::default();
+    let mut pagination = PaginationRequest::default();
     pagination.limit = 10;
     pagination.page = 0;
-    get_inscriptions_req.pagination = protobuf::MessageField::some(pagination);
+    get_inscriptions_req.pagination = Some(pagination);
     
     let inscriptions_response = get_inscriptions(&get_inscriptions_req).map_err(|e| anyhow::anyhow!(e))?;
     assert!(inscriptions_response.pagination.is_some());
@@ -180,8 +180,8 @@ fn test_complete_inscription_lifecycle() -> Result<()> {
         let inscription_index = 0; // First inscription in transaction
         
         // Test get_inscription by ID
-        let mut get_inscription_req = GetInscriptionRequest::new();
-        let mut proto_id = InscriptionId::new();
+        let mut get_inscription_req = GetInscriptionRequest::default();
+        let mut proto_id = InscriptionId::default();
         proto_id.txid = tx.txid().to_byte_array().to_vec();
         proto_id.index = inscription_index;
         get_inscription_req.query = Some(get_inscription_request::Query::Id(proto_id.clone()));
@@ -190,8 +190,8 @@ fn test_complete_inscription_lifecycle() -> Result<()> {
         assert!(inscription_response.id.is_some());
         
         // Test get_content
-        let mut get_content_req = GetContentRequest::new();
-        get_content_req.id = protobuf::MessageField::some(proto_id.clone());
+        let mut get_content_req = GetContentRequest::default();
+        get_content_req.id = Some(proto_id.clone());
         
         let content_response = get_content(&get_content_req).map_err(|e| anyhow::anyhow!(e))?;
         
@@ -212,8 +212,8 @@ fn test_complete_inscription_lifecycle() -> Result<()> {
         assert_eq!(content_response.content, expected_content);
         
         // Test get_metadata
-        let mut get_metadata_req = GetMetadataRequest::new();
-        get_metadata_req.id = protobuf::MessageField::some(proto_id);
+        let mut get_metadata_req = GetMetadataRequest::default();
+        get_metadata_req.id = Some(proto_id);
         
         let metadata_response = get_metadata(&get_metadata_req).map_err(|e| anyhow::anyhow!(e))?;
         // Metadata should be empty for these simple inscriptions
@@ -276,11 +276,11 @@ fn test_parent_child_relationships() -> Result<()> {
     
     // === TESTING PHASE ===
     // Test get_children view function
-    let mut get_children_req = GetChildrenRequest::new();
-    let mut parent_proto_id = InscriptionId::new();
+    let mut get_children_req = GetChildrenRequest::default();
+    let mut parent_proto_id = InscriptionId::default();
     parent_proto_id.txid = parent_tx.txid().to_byte_array().to_vec();
     parent_proto_id.index = 0;
-    get_children_req.parent_id = protobuf::MessageField::some(parent_proto_id.clone());
+    get_children_req.parent_id = Some(parent_proto_id.clone());
     
     let children_response = get_children(&get_children_req).map_err(|e| anyhow::anyhow!(e))?;
     assert_eq!(children_response.ids.len(), 2);
@@ -299,11 +299,11 @@ fn test_parent_child_relationships() -> Result<()> {
     
     // Test get_parents view function for each child
     for child_tx in [&child1_tx, &child2_tx] {
-        let mut get_parents_req = GetParentsRequest::new();
-        let mut child_proto_id = InscriptionId::new();
+        let mut get_parents_req = GetParentsRequest::default();
+        let mut child_proto_id = InscriptionId::default();
         child_proto_id.txid = child_tx.txid().to_byte_array().to_vec();
         child_proto_id.index = 0;
-        get_parents_req.child_id = protobuf::MessageField::some(child_proto_id);
+        get_parents_req.child_id = Some(child_proto_id);
         
         let parents_response = get_parents(&get_parents_req).map_err(|e| anyhow::anyhow!(e))?;
         assert_eq!(parents_response.ids.len(), 1);
@@ -316,8 +316,8 @@ fn test_parent_child_relationships() -> Result<()> {
     }
     
     // Test get_child_inscriptions with detailed info
-    let mut get_child_inscriptions_req = GetChildInscriptionsRequest::new();
-    get_child_inscriptions_req.parent_id = protobuf::MessageField::some(parent_proto_id);
+    let mut get_child_inscriptions_req = GetChildInscriptionsRequest::default();
+    get_child_inscriptions_req.parent_id = Some(parent_proto_id);
     
     let child_inscriptions_response = get_child_inscriptions(&get_child_inscriptions_req).map_err(|e| anyhow::anyhow!(e))?;
     assert_eq!(child_inscriptions_response.children.len(), 2);
@@ -361,11 +361,11 @@ fn test_inscription_delegation() -> Result<()> {
     
     // === TESTING PHASE ===
     // Test get_content on delegating inscription (should return delegate's content)
-    let mut get_content_req = GetContentRequest::new();
-    let mut delegating_proto_id = InscriptionId::new();
+    let mut get_content_req = GetContentRequest::default();
+    let mut delegating_proto_id = InscriptionId::default();
     delegating_proto_id.txid = delegating_tx.txid().to_byte_array().to_vec();
     delegating_proto_id.index = 0;
-    get_content_req.id = protobuf::MessageField::some(delegating_proto_id.clone());
+    get_content_req.id = Some(delegating_proto_id.clone());
     
     let content_response = get_content(&get_content_req).map_err(|e| anyhow::anyhow!(e))?;
     
@@ -373,8 +373,8 @@ fn test_inscription_delegation() -> Result<()> {
     assert_eq!(content_response.content, delegate_content);
     
     // Test get_undelegated_content (should return delegating inscription's own content)
-    let mut get_undelegated_req = GetUndelegatedContentRequest::new();
-    get_undelegated_req.id = protobuf::MessageField::some(delegating_proto_id);
+    let mut get_undelegated_req = GetUndelegatedContentRequest::default();
+    get_undelegated_req.id = Some(delegating_proto_id);
     
     let undelegated_response = get_undelegated_content(&get_undelegated_req).map_err(|e| anyhow::anyhow!(e))?;
     
@@ -412,8 +412,8 @@ fn test_inscription_transfers() -> Result<()> {
     let inscription_id = format!("{}i0", initial_tx.txid());
     
     // Test get_inscription to verify location update
-    let mut get_inscription_req = GetInscriptionRequest::new();
-    let mut proto_id = InscriptionId::new();
+    let mut get_inscription_req = GetInscriptionRequest::default();
+    let mut proto_id = InscriptionId::default();
     proto_id.txid = initial_tx.txid().to_byte_array().to_vec();
     proto_id.index = 0;
     get_inscription_req.query = Some(get_inscription_request::Query::Id(proto_id));
@@ -475,8 +475,8 @@ fn test_cursed_inscriptions() -> Result<()> {
     indexer.index_transaction(&valid_tx, 840001, 1);
     
     // Verify valid inscription is properly indexed
-    let mut get_inscription_req = GetInscriptionRequest::new();
-    let mut proto_id = InscriptionId::new();
+    let mut get_inscription_req = GetInscriptionRequest::default();
+    let mut proto_id = InscriptionId::default();
     proto_id.txid = valid_tx.txid().to_byte_array().to_vec();
     proto_id.index = 0;
     get_inscription_req.query = Some(get_inscription_request::Query::Id(proto_id));
@@ -521,11 +521,11 @@ fn test_all_view_functions_comprehensive() -> Result<()> {
     // === TEST ALL VIEW FUNCTIONS ===
     
     // 1. Test get_inscriptions with pagination
-    let mut get_inscriptions_req = GetInscriptionsRequest::new();
-    let mut pagination = PaginationRequest::new();
+    let mut get_inscriptions_req = GetInscriptionsRequest::default();
+    let mut pagination = PaginationRequest::default();
     pagination.limit = 2;
     pagination.page = 0;
-    get_inscriptions_req.pagination = protobuf::MessageField::some(pagination);
+    get_inscriptions_req.pagination = Some(pagination);
     
     let inscriptions_response = get_inscriptions(&get_inscriptions_req).map_err(|e| anyhow::anyhow!(e))?;
     assert!(inscriptions_response.pagination.is_some());
@@ -535,8 +535,8 @@ fn test_all_view_functions_comprehensive() -> Result<()> {
     
     // 2. Test get_inscription for each inscription
     for (i, tx) in txs.iter().enumerate() {
-        let mut get_inscription_req = GetInscriptionRequest::new();
-        let mut proto_id = InscriptionId::new();
+        let mut get_inscription_req = GetInscriptionRequest::default();
+        let mut proto_id = InscriptionId::default();
         proto_id.txid = tx.txid().to_byte_array().to_vec();
         proto_id.index = 0;
         get_inscription_req.query = Some(get_inscription_request::Query::Id(proto_id.clone()));
@@ -545,62 +545,61 @@ fn test_all_view_functions_comprehensive() -> Result<()> {
         assert!(inscription_response.id.is_some());
         
         // Test get_content
-        let mut get_content_req = GetContentRequest::new();
-        get_content_req.id = protobuf::MessageField::some(proto_id.clone());
+        let mut get_content_req = GetContentRequest::default();
+        get_content_req.id = Some(proto_id.clone());
         
         let content_response = get_content(&get_content_req).map_err(|e| anyhow::anyhow!(e))?;
         assert_eq!(content_response.content, inscriptions[i].0);
         
         // Test get_metadata
-        let mut get_metadata_req = GetMetadataRequest::new();
-        get_metadata_req.id = protobuf::MessageField::some(proto_id);
+        let mut get_metadata_req = GetMetadataRequest::default();
+        get_metadata_req.id = Some(proto_id);
         
         let _metadata_response = get_metadata(&get_metadata_req).map_err(|e| anyhow::anyhow!(e))?;
         // Metadata should be empty for these simple inscriptions
     }
     
     // 3. Test get_sat
-    let mut get_sat_req = GetSatRequest::new();
+    let mut get_sat_req = GetSatRequest::default();
     get_sat_req.sat = 5000000000; // 50 BTC worth of sats
     
     let sat_response = get_sat(&get_sat_req).map_err(|e| anyhow::anyhow!(e))?;
     assert_eq!(sat_response.number, 5000000000);
-    assert_ne!(sat_response.rarity.value(), 0); // Should have a valid rarity
     
     // 4. Test get_sat_inscriptions
-    let mut get_sat_inscriptions_req = GetSatInscriptionsRequest::new();
+    let mut get_sat_inscriptions_req = GetSatInscriptionsRequest::default();
     get_sat_inscriptions_req.sat = 5000000000;
     
     let _sat_inscriptions_response = get_sat_inscriptions(&get_sat_inscriptions_req).map_err(|e| anyhow::anyhow!(e))?;
     // Should return empty list for this test sat
     
     // 5. Test get_block_info
-    let mut get_block_info_req = GetBlockInfoRequest::new();
+    let mut get_block_info_req = GetBlockInfoRequest::default();
     get_block_info_req.query = Some(get_block_info_request::Query::Height(840000));
     
     let block_info_response = get_block_info(&get_block_info_req).map_err(|e| anyhow::anyhow!(e))?;
     assert_eq!(block_info_response.height, 840000);
     
     // 6. Test get_block_hash
-    let mut get_block_hash_req = GetBlockHashRequest::new();
+    let mut get_block_hash_req = GetBlockHashRequest::default();
     get_block_hash_req.height = Some(840000);
     
     let _block_hash_response = get_block_hash(&get_block_hash_req).map_err(|e| anyhow::anyhow!(e))?;
     // Should return block hash for the height
     
     // 7. Test get_tx
-    let mut get_tx_req = GetTransactionRequest::new();
+    let mut get_tx_req = GetTransactionRequest::default();
     get_tx_req.txid = txs[0].txid().to_byte_array().to_vec();
     
     let _tx_response = get_tx(&get_tx_req).map_err(|e| anyhow::anyhow!(e))?;
     // Should return transaction info
     
     // 8. Test get_utxo
-    let mut get_utxo_req = GetUtxoRequest::new();
-    let mut outpoint = OutPoint::new();
+    let mut get_utxo_req = GetUtxoRequest::default();
+    let mut outpoint = OutPoint::default();
     outpoint.txid = txs[0].txid().to_byte_array().to_vec();
     outpoint.vout = 0;
-    get_utxo_req.outpoint = protobuf::MessageField::some(outpoint);
+    get_utxo_req.outpoint = Some(outpoint);
     
     let _utxo_response = get_utxo(&get_utxo_req).map_err(|e| anyhow::anyhow!(e))?;
     // Should return UTXO info
@@ -616,8 +615,8 @@ fn test_error_handling_comprehensive() -> Result<()> {
     // === TEST MISSING DATA SCENARIOS ===
     
     // 1. Test get_inscription with non-existent ID
-    let mut get_inscription_req = GetInscriptionRequest::new();
-    let mut proto_id = InscriptionId::new();
+    let mut get_inscription_req = GetInscriptionRequest::default();
+    let mut proto_id = InscriptionId::default();
     proto_id.txid = vec![0u8; 32]; // Non-existent txid
     proto_id.index = 0;
     get_inscription_req.query = Some(get_inscription_request::Query::Id(proto_id.clone()));
@@ -626,22 +625,22 @@ fn test_error_handling_comprehensive() -> Result<()> {
     assert!(inscription_response.id.is_none()); // Should return empty response
     
     // 2. Test get_content with non-existent ID
-    let mut get_content_req = GetContentRequest::new();
-    get_content_req.id = protobuf::MessageField::some(proto_id.clone());
+    let mut get_content_req = GetContentRequest::default();
+    get_content_req.id = Some(proto_id.clone());
     
     let content_response = get_content(&get_content_req).map_err(|e| anyhow::anyhow!(e))?;
     assert!(content_response.content.is_empty()); // Should return empty content
     
     // 3. Test get_children with non-existent parent
-    let mut get_children_req = GetChildrenRequest::new();
-    get_children_req.parent_id = protobuf::MessageField::some(proto_id.clone());
+    let mut get_children_req = GetChildrenRequest::default();
+    get_children_req.parent_id = Some(proto_id.clone());
     
     let children_response = get_children(&get_children_req).map_err(|e| anyhow::anyhow!(e))?;
     assert!(children_response.ids.is_empty()); // Should return empty list
     
     // 4. Test get_parents with non-existent child
-    let mut get_parents_req = GetParentsRequest::new();
-    get_parents_req.child_id = protobuf::MessageField::some(proto_id);
+    let mut get_parents_req = GetParentsRequest::default();
+    get_parents_req.child_id = Some(proto_id);
     
     let parents_response = get_parents(&get_parents_req).map_err(|e| anyhow::anyhow!(e))?;
     assert!(parents_response.ids.is_empty()); // Should return empty list
@@ -649,28 +648,28 @@ fn test_error_handling_comprehensive() -> Result<()> {
     // === TEST INVALID REQUEST SCENARIOS ===
     
     // 5. Test get_inscription with missing ID
-    let empty_req = GetInscriptionRequest::new();
+    let empty_req = GetInscriptionRequest::default();
     let result = get_inscription(&empty_req);
     assert!(result.is_err()); // Should return error
     
     // 6. Test get_content with missing ID
-    let empty_content_req = GetContentRequest::new();
+    let empty_content_req = GetContentRequest::default();
     let result = get_content(&empty_content_req);
     assert!(result.is_err()); // Should return error
     
     // 7. Test get_block_info with no query
-    let empty_block_req = GetBlockInfoRequest::new();
+    let empty_block_req = GetBlockInfoRequest::default();
     let result = get_block_info(&empty_block_req);
     assert!(result.is_err()); // Should return error
     
     // === TEST BOUNDARY CONDITIONS ===
     
     // 8. Test pagination with large page numbers
-    let mut get_inscriptions_req = GetInscriptionsRequest::new();
-    let mut pagination = PaginationRequest::new();
+    let mut get_inscriptions_req = GetInscriptionsRequest::default();
+    let mut pagination = PaginationRequest::default();
     pagination.limit = 100; // Max limit
     pagination.page = 999999; // Very large page
-    get_inscriptions_req.pagination = protobuf::MessageField::some(pagination);
+    get_inscriptions_req.pagination = Some(pagination);
     
     let inscriptions_response = get_inscriptions(&get_inscriptions_req).map_err(|e| anyhow::anyhow!(e))?;
     assert!(inscriptions_response.pagination.is_some());
@@ -712,8 +711,8 @@ fn test_performance_stress() -> Result<()> {
     
     // 1. Test bulk inscription retrieval
     for tx in &txs {
-        let mut get_inscription_req = GetInscriptionRequest::new();
-        let mut proto_id = InscriptionId::new();
+        let mut get_inscription_req = GetInscriptionRequest::default();
+        let mut proto_id = InscriptionId::default();
         proto_id.txid = tx.txid().to_byte_array().to_vec();
         proto_id.index = 0;
         get_inscription_req.query = Some(get_inscription_request::Query::Id(proto_id));
@@ -724,11 +723,11 @@ fn test_performance_stress() -> Result<()> {
     
     // 2. Test paginated queries with various page sizes
     for page_size in [1, 5, 10, 25] {
-        let mut get_inscriptions_req = GetInscriptionsRequest::new();
-        let mut pagination = PaginationRequest::new();
+        let mut get_inscriptions_req = GetInscriptionsRequest::default();
+        let mut pagination = PaginationRequest::default();
         pagination.limit = page_size;
         pagination.page = 0;
-        get_inscriptions_req.pagination = protobuf::MessageField::some(pagination);
+        get_inscriptions_req.pagination = Some(pagination);
         
         let inscriptions_response = get_inscriptions(&get_inscriptions_req).map_err(|e| anyhow::anyhow!(e))?;
         assert!(inscriptions_response.pagination.is_some());
@@ -736,11 +735,11 @@ fn test_performance_stress() -> Result<()> {
     
     // 3. Test content retrieval for all inscriptions
     for tx in &txs {
-        let mut get_content_req = GetContentRequest::new();
-        let mut proto_id = InscriptionId::new();
+        let mut get_content_req = GetContentRequest::default();
+        let mut proto_id = InscriptionId::default();
         proto_id.txid = tx.txid().to_byte_array().to_vec();
         proto_id.index = 0;
-        get_content_req.id = protobuf::MessageField::some(proto_id);
+        get_content_req.id = Some(proto_id);
         
         let content_response = get_content(&get_content_req).map_err(|e| anyhow::anyhow!(e))?;
         assert!(!content_response.content.is_empty());
@@ -802,11 +801,11 @@ fn test_comprehensive_system_integration() -> Result<()> {
     // === COMPREHENSIVE VERIFICATION ===
     
     // 1. Verify all inscriptions are indexed
-    let mut get_inscriptions_req = GetInscriptionsRequest::new();
-    let mut pagination = PaginationRequest::new();
+    let mut get_inscriptions_req = GetInscriptionsRequest::default();
+    let mut pagination = PaginationRequest::default();
     pagination.limit = 100;
     pagination.page = 0;
-    get_inscriptions_req.pagination = protobuf::MessageField::some(pagination);
+    get_inscriptions_req.pagination = Some(pagination);
     
     let inscriptions_response = get_inscriptions(&get_inscriptions_req).map_err(|e| anyhow::anyhow!(e))?;
     // We should have at least 5 inscriptions (3 initial + 1 child + 1 delegating)
@@ -816,29 +815,29 @@ fn test_comprehensive_system_integration() -> Result<()> {
     assert!(pagination_resp.total >= 5); // At least 5 inscriptions
     
     // 2. Verify parent-child relationships
-    let mut get_children_req = GetChildrenRequest::new();
-    let mut parent_proto_id = InscriptionId::new();
+    let mut get_children_req = GetChildrenRequest::default();
+    let mut parent_proto_id = InscriptionId::default();
     parent_proto_id.txid = block1_txs[0].txid().to_byte_array().to_vec();
     parent_proto_id.index = 0;
-    get_children_req.parent_id = protobuf::MessageField::some(parent_proto_id);
+    get_children_req.parent_id = Some(parent_proto_id);
     
     let children_response = get_children(&get_children_req).map_err(|e| anyhow::anyhow!(e))?;
     assert!(!children_response.ids.is_empty());
     
     // 3. Verify delegation works
-    let mut get_content_req = GetContentRequest::new();
-    let mut delegating_proto_id = InscriptionId::new();
+    let mut get_content_req = GetContentRequest::default();
+    let mut delegating_proto_id = InscriptionId::default();
     delegating_proto_id.txid = delegating_tx.txid().to_byte_array().to_vec();
     delegating_proto_id.index = 0;
-    get_content_req.id = protobuf::MessageField::some(delegating_proto_id);
+    get_content_req.id = Some(delegating_proto_id);
     
     let content_response = get_content(&get_content_req).map_err(|e| anyhow::anyhow!(e))?;
     // Should return the delegated content
     assert!(!content_response.content.is_empty());
     
     // 4. Verify transfers are tracked
-    let mut get_inscription_req = GetInscriptionRequest::new();
-    let mut transferred_proto_id = InscriptionId::new();
+    let mut get_inscription_req = GetInscriptionRequest::default();
+    let mut transferred_proto_id = InscriptionId::default();
     transferred_proto_id.txid = block1_txs[2].txid().to_byte_array().to_vec();
     transferred_proto_id.index = 0;
     get_inscription_req.query = Some(get_inscription_request::Query::Id(transferred_proto_id));
@@ -857,34 +856,34 @@ fn test_all_view_functions_with_data(txs: &[bitcoin::Transaction]) -> Result<()>
     // Test each view function to ensure they work with real data
     
     // Test get_sat
-    let mut get_sat_req = GetSatRequest::new();
+    let mut get_sat_req = GetSatRequest::default();
     get_sat_req.sat = 1000000000; // 10 BTC worth of sats
     let _sat_response = get_sat(&get_sat_req).map_err(|e| anyhow::anyhow!(e))?;
     
     // Test get_block_info
-    let mut get_block_info_req = GetBlockInfoRequest::new();
+    let mut get_block_info_req = GetBlockInfoRequest::default();
     get_block_info_req.query = Some(get_block_info_request::Query::Height(840000));
     let _block_info_response = get_block_info(&get_block_info_req).map_err(|e| anyhow::anyhow!(e))?;
     
     // Test get_block_hash
-    let mut get_block_hash_req = GetBlockHashRequest::new();
+    let mut get_block_hash_req = GetBlockHashRequest::default();
     get_block_hash_req.height = Some(840000);
     let _block_hash_response = get_block_hash(&get_block_hash_req).map_err(|e| anyhow::anyhow!(e))?;
     
     // Test get_tx for first transaction
     if !txs.is_empty() {
-        let mut get_tx_req = GetTransactionRequest::new();
+        let mut get_tx_req = GetTransactionRequest::default();
         get_tx_req.txid = txs[0].txid().to_byte_array().to_vec();
         let _tx_response = get_tx(&get_tx_req).map_err(|e| anyhow::anyhow!(e))?;
     }
     
     // Test get_utxo
     if !txs.is_empty() {
-        let mut get_utxo_req = GetUtxoRequest::new();
-        let mut outpoint = OutPoint::new();
+        let mut get_utxo_req = GetUtxoRequest::default();
+        let mut outpoint = OutPoint::default();
         outpoint.txid = txs[0].txid().to_byte_array().to_vec();
         outpoint.vout = 0;
-        get_utxo_req.outpoint = protobuf::MessageField::some(outpoint);
+        get_utxo_req.outpoint = Some(outpoint);
         let _utxo_response = get_utxo(&get_utxo_req).map_err(|e| anyhow::anyhow!(e))?;
     }
     
@@ -946,11 +945,11 @@ fn test_complete_system_validation() -> Result<()> {
     // 4. Test every view function with the indexed data
     
     // Test inscription listing
-    let mut get_inscriptions_req = GetInscriptionsRequest::new();
-    let mut pagination = PaginationRequest::new();
+    let mut get_inscriptions_req = GetInscriptionsRequest::default();
+    let mut pagination = PaginationRequest::default();
     pagination.limit = 10;
     pagination.page = 0;
-    get_inscriptions_req.pagination = protobuf::MessageField::some(pagination);
+    get_inscriptions_req.pagination = Some(pagination);
     
     let inscriptions_response = get_inscriptions(&get_inscriptions_req).map_err(|e| anyhow::anyhow!(e))?;
     assert!(inscriptions_response.pagination.is_some());
@@ -961,8 +960,8 @@ fn test_complete_system_validation() -> Result<()> {
         let inscription_index = 0;
         
         // Test get_inscription
-        let mut get_inscription_req = GetInscriptionRequest::new();
-        let mut proto_id = InscriptionId::new();
+        let mut get_inscription_req = GetInscriptionRequest::default();
+        let mut proto_id = InscriptionId::default();
         proto_id.txid = tx.txid().to_byte_array().to_vec();
         proto_id.index = inscription_index;
         get_inscription_req.query = Some(get_inscription_request::Query::Id(proto_id.clone()));
@@ -971,30 +970,29 @@ fn test_complete_system_validation() -> Result<()> {
         assert!(inscription_response.id.is_some());
         
         // Test get_content
-        let mut get_content_req = GetContentRequest::new();
-        get_content_req.id = protobuf::MessageField::some(proto_id.clone());
+        let mut get_content_req = GetContentRequest::default();
+        get_content_req.id = Some(proto_id.clone());
         
         let content_response = get_content(&get_content_req).map_err(|e| anyhow::anyhow!(e))?;
         let expected_content = inscriptions[i].0;
         assert_eq!(content_response.content, expected_content);
         
         // Test get_metadata
-        let mut get_metadata_req = GetMetadataRequest::new();
-        get_metadata_req.id = protobuf::MessageField::some(proto_id);
+        let mut get_metadata_req = GetMetadataRequest::default();
+        get_metadata_req.id = Some(proto_id);
         
         let _metadata_response = get_metadata(&get_metadata_req).map_err(|e| anyhow::anyhow!(e))?;
     }
     
     // Test sat-related functions
-    let mut get_sat_req = GetSatRequest::new();
+    let mut get_sat_req = GetSatRequest::default();
     get_sat_req.sat = 2100000000000000; // Near the end of Bitcoin's supply
     
     let sat_response = get_sat(&get_sat_req).map_err(|e| anyhow::anyhow!(e))?;
     assert_eq!(sat_response.number, 2100000000000000);
-    assert!(sat_response.rarity.value() > 0);
     
     // Test block-related functions
-    let mut get_block_info_req = GetBlockInfoRequest::new();
+    let mut get_block_info_req = GetBlockInfoRequest::default();
     get_block_info_req.query = Some(get_block_info_request::Query::Height(840000));
     
     let block_info_response = get_block_info(&get_block_info_req).map_err(|e| anyhow::anyhow!(e))?;
@@ -1009,8 +1007,8 @@ fn test_complete_system_validation() -> Result<()> {
     }
     
     // 6. Test error handling
-    let mut get_inscription_req = GetInscriptionRequest::new();
-    let mut proto_id = InscriptionId::new();
+    let mut get_inscription_req = GetInscriptionRequest::default();
+    let mut proto_id = InscriptionId::default();
     proto_id.txid = vec![0u8; 32]; // Non-existent txid
     proto_id.index = 0;
     get_inscription_req.query = Some(get_inscription_request::Query::Id(proto_id));

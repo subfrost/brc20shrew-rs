@@ -1,11 +1,11 @@
 [package]
-name = "shrewscriptions_rs"
+name = "brc20shrew"
 version = "0.1.0"
 edition = "2021"
-authors = ["shrewscriptions-rs contributors"]
+authors = ["brc20shrew-rs contributors"]
 description = "A WASM-based inscriptions indexer for the metashrew environment"
 license = "MIT"
-repository = "https://github.com/shrewscriptions/shrewscriptions-rs"
+repository = "https://github.com/brc20shrew/brc20shrew-rs"
 keywords = ["bitcoin", "inscriptions", "indexer", "wasm", "metashrew"]
 categories = ["cryptography::cryptocurrencies", "wasm"]
 
@@ -33,6 +33,7 @@ wasm-bindgen = "0.2"
 wasm-bindgen-test = "0.3"
 getrandom = { version = "0.2", features = ["js"] }
 protobuf = "3.0"
+prost = "0.12.6"
 
 # Metashrew dependencies (using git since not published to crates.io)
 metashrew-core = { git = "https://github.com/sandshrewmetaprotocols/metashrew", branch = "master", default-features = false }
@@ -45,6 +46,7 @@ metashrew-core = { git = "https://github.com/sandshrewmetaprotocols/metashrew", 
 
 [build-dependencies]
 protobuf-codegen = "3.0"
+tonic-build = "0.12.0"
 
 [profile.release]
 opt-level = "s"
@@ -56,4 +58,3 @@ panic = "abort"
 opt-level = 0
 debug = true
 overflow-checks = true
-

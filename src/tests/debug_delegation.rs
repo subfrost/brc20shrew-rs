@@ -28,11 +28,11 @@ fn test_delegate_content_storage() -> Result<()> {
     indexer.index_transaction(&delegate_tx, 840000, 1);
     
     // Test direct content retrieval from delegate
-    let mut get_content_req = GetContentRequest::new();
-    let mut delegate_proto_id = InscriptionId::new();
+    let mut get_content_req = GetContentRequest::default();
+    let mut delegate_proto_id = InscriptionId::default();
     delegate_proto_id.txid = delegate_tx.txid().to_byte_array().to_vec();
     delegate_proto_id.index = 0;
-    get_content_req.id = protobuf::MessageField::some(delegate_proto_id.clone());
+    get_content_req.id = Some(delegate_proto_id.clone());
     
     let delegate_content_response = get_content(&get_content_req).map_err(|e| anyhow::anyhow!(e))?;
     
@@ -59,11 +59,11 @@ fn test_delegate_content_storage() -> Result<()> {
     indexer.index_transaction(&delegating_tx, 840001, 1);
     
     // Test delegating inscription content retrieval
-    let mut delegating_get_content_req = GetContentRequest::new();
-    let mut delegating_proto_id = InscriptionId::new();
+    let mut delegating_get_content_req = GetContentRequest::default();
+    let mut delegating_proto_id = InscriptionId::default();
     delegating_proto_id.txid = delegating_tx.txid().to_byte_array().to_vec();
     delegating_proto_id.index = 0;
-    delegating_get_content_req.id = protobuf::MessageField::some(delegating_proto_id.clone());
+    delegating_get_content_req.id = Some(delegating_proto_id.clone());
     
     let delegating_content_response = get_content(&delegating_get_content_req).map_err(|e| anyhow::anyhow!(e))?;
     

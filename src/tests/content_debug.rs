@@ -50,11 +50,11 @@ fn test_json_content_with_image_field() -> Result<()> {
     
     // Test content retrieval
     let inscription_index = 0;
-    let mut get_content_req = GetContentRequest::new();
-    let mut proto_id = InscriptionId::new();
+    let mut get_content_req = GetContentRequest::default();
+    let mut proto_id = InscriptionId::default();
     proto_id.txid = tx.txid().to_byte_array().to_vec();
     proto_id.index = inscription_index;
-    get_content_req.id = protobuf::MessageField::some(proto_id.clone());
+    get_content_req.id = Some(proto_id.clone());
     
     let content_response = get_content(&get_content_req).map_err(|e| anyhow::anyhow!(e))?;
     
@@ -110,11 +110,11 @@ fn test_simple_json_content() -> Result<()> {
     
     // Test content retrieval
     let inscription_index = 0;
-    let mut get_content_req = GetContentRequest::new();
-    let mut proto_id = InscriptionId::new();
+    let mut get_content_req = GetContentRequest::default();
+    let mut proto_id = InscriptionId::default();
     proto_id.txid = tx.txid().to_byte_array().to_vec();
     proto_id.index = inscription_index;
-    get_content_req.id = protobuf::MessageField::some(proto_id.clone());
+    get_content_req.id = Some(proto_id.clone());
     
     let content_response = get_content(&get_content_req).map_err(|e| anyhow::anyhow!(e))?;
     

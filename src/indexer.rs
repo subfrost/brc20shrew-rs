@@ -736,4 +736,5 @@ impl ShrewscriptionsIndexer {
             }
         }
     }
+    
 }

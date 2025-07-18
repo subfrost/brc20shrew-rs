@@ -58,6 +58,8 @@ lazy_static::lazy_static! {
     // Delegation tracking
     pub static ref DELEGATE_TO_INSCRIPTIONS: IndexPointer = IndexPointer::from_keyword("/inscriptions/delegate_to_inscriptions/");
     pub static ref INSCRIPTION_TO_DELEGATE: IndexPointer = IndexPointer::from_keyword("/inscriptions/inscription_to_delegate/");
+
+    // BRC20 Tables
 }
 
 /// Table wrapper structs for easier access in tests and indexing

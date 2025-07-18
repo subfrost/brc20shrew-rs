@@ -3,7 +3,7 @@
 //! Ported from ord/src/inscriptions/envelope.rs
 
 use super::Inscription;
-use bitcoin::{Transaction, Witness};
+use bitcoin::Transaction;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 

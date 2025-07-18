@@ -57,6 +57,8 @@
 
 use crate::indexer::InscriptionIndexer;
 use crate::inscription::{InscriptionId, InscriptionEntry};
+use crate::tables::GLOBAL_SEQUENCE_COUNTER;
+use metashrew_support::index_pointer::KeyValuePointer;
 use bitcoin::{
     Block, Transaction, TxIn, TxOut, OutPoint, Witness, ScriptBuf, Sequence,
     address::NetworkChecked, Address, Network,
@@ -76,6 +78,9 @@ use anyhow::Result;
 /// Follows the exact same pattern as alkanes-rs clear() function.
 pub fn clear() {
     clear_base();
+    // Explicitly reset the global counter because its state can leak between tests
+    let mut counter = GLOBAL_SEQUENCE_COUNTER.select(&vec![]);
+    counter.set(std::sync::Arc::new(vec![]));
     configure_network();
 }
 
