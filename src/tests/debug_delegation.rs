@@ -1,7 +1,7 @@
 //! Debug delegation test to isolate the truncation issue
 
 use crate::tests::helpers::*;
-use crate::indexer::ShrewscriptionsIndexer;
+use crate::indexer::InscriptionIndexer;
 use crate::view::*;
 use crate::proto::shrewscriptions::*;
 use bitcoin::Txid;
@@ -13,8 +13,7 @@ use anyhow::Result;
 fn test_delegate_content_storage() -> Result<()> {
     clear();
     
-    let mut indexer = ShrewscriptionsIndexer::new();
-    indexer.reset();
+    let mut indexer = InscriptionIndexer::new();
     
     // Create delegate inscription with 49-byte content
     let delegate_content = b"This is the actual content that will be delegated";
@@ -22,10 +21,13 @@ fn test_delegate_content_storage() -> Result<()> {
     println!("Original delegate content: {:?}", delegate_content);
     
     let delegate_witness = create_inscription_envelope(b"text/plain", delegate_content);
-    let delegate_tx = create_reveal_transaction(&Txid::from_slice(&[0u8; 32]).unwrap(), delegate_witness);
+    let mut delegate_commit_txid_bytes = [0u8; 32];
+    delegate_commit_txid_bytes[30] = 1;
+    let delegate_commit_txid = Txid::from_slice(&delegate_commit_txid_bytes).unwrap();
+    let delegate_tx = create_reveal_transaction(&delegate_commit_txid, delegate_witness);
     
     // Index delegate inscription
-    indexer.index_transaction(&delegate_tx, 840000, 1);
+    indexer.index_block(&create_block_with_txs(vec![create_coinbase_transaction(840000), delegate_tx.clone()]), 840000).unwrap();
     
     // Test direct content retrieval from delegate
     let mut get_content_req = GetContentRequest::default();
@@ -53,10 +55,13 @@ fn test_delegate_content_storage() -> Result<()> {
     
     // Create delegating inscription (empty content, just delegate reference)
     let delegating_witness = create_inscription_envelope_with_delegate(b"text/plain", b"", &delegate_id);
-    let delegating_tx = create_reveal_transaction(&delegate_tx.txid(), delegating_witness);
+    let mut delegating_commit_txid_bytes = [0u8; 32];
+    delegating_commit_txid_bytes[30] = 2;
+    let delegating_commit_txid = Txid::from_slice(&delegating_commit_txid_bytes).unwrap();
+    let delegating_tx = create_reveal_transaction(&delegating_commit_txid, delegating_witness);
     
     // Index delegating inscription
-    indexer.index_transaction(&delegating_tx, 840001, 1);
+    indexer.index_block(&create_block_with_txs(vec![create_coinbase_transaction(840001), delegating_tx.clone()]), 840001).unwrap();
     
     // Test delegating inscription content retrieval
     let mut delegating_get_content_req = GetContentRequest::default();

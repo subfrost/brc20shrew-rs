@@ -8,6 +8,8 @@ pub mod indexer;
 pub mod view;
 pub mod message;
 pub mod ord_inscriptions;
+pub mod brc20;
+pub mod utils;
 use metashrew_core::{input, flush};
 
 // Re-export protobuf types

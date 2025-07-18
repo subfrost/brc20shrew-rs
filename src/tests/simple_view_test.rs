@@ -148,7 +148,7 @@ fn test_error_handling() {
     let get_inscription_req = GetInscriptionRequest::default(); // No ID set
     let result = get_inscription(&get_inscription_req);
     assert!(result.is_err());
-    assert!(result.unwrap_err().contains("Request must specify either id or number"));
+    assert!(result.unwrap_err().contains("Request must specify a query"));
     
     // Test get_content with missing ID
     let get_content_req = GetContentRequest::default(); // No ID set

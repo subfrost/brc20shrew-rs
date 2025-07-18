@@ -93,41 +93,112 @@ pub fn configure_network() {
     // For now, we use regtest addresses directly in helper functions
 }
 
-/// Get a test address for the regtest network
-pub fn get_test_address() -> Address<NetworkChecked> {
-    // Create a simple P2WPKH address for regtest
+/// Get a test address for the regtest network, indexed by a number
+pub fn get_test_address(index: u8) -> Address<NetworkChecked> {
     use bitcoin::key::Secp256k1;
     use bitcoin::secp256k1::SecretKey;
     use bitcoin::PrivateKey;
     use bitcoin::PublicKey;
     
     let secp = Secp256k1::new();
-    let secret_key = SecretKey::from_slice(&[1u8; 32]).unwrap();
+    let mut key_data = [1u8; 32];
+    key_data[0] = index;
+    let secret_key = SecretKey::from_slice(&key_data).unwrap();
     let private_key = PrivateKey::new(secret_key, Network::Regtest);
     let public_key = PublicKey::from_private_key(&secp, &private_key);
     
     Address::p2wpkh(&public_key, Network::Regtest).unwrap()
 }
 
-/// Get a second test address for the regtest network
-pub fn get_test_address_2() -> Address<NetworkChecked> {
-    // Create a different P2WPKH address for regtest
-    use bitcoin::key::Secp256k1;
-    use bitcoin::secp256k1::SecretKey;
-    use bitcoin::PrivateKey;
-    use bitcoin::PublicKey;
+// BRC20 Test Helpers
+
+pub fn create_test_block_with_brc20_deploy_op() -> (Block, Transaction) {
+    let content = br#"{ "p": "brc-20", "op": "deploy", "tick": "DOGE", "max": "21000000", "lim": "1000" }"#;
+    let tx = create_inscription_transaction(content, "text/plain", None);
+    let block = create_block_with_txs(vec![create_coinbase_transaction(0), tx.clone()]);
+    (block, tx)
+}
+
+pub fn create_test_block_with_brc20_mint_op(ticker: &str, amount: u64, to_address: &Address, commit_txid: &Txid) -> (Block, Transaction) {
+    let content_str = format!(r#"{{ "p": "brc-20", "op": "mint", "tick": "{}", "amt": "{}" }}"#, ticker, amount);
+    let content = content_str.as_bytes();
+    let tx = create_inscription_transaction_to_address(content, "text/plain", Some(OutPoint::new(*commit_txid, 0)), to_address);
+    let block = create_block_with_txs(vec![create_coinbase_transaction(1), tx.clone()]);
+    (block, tx)
+}
+
+pub fn create_test_block_with_brc20_transfer_inscribe_op(ticker: &str, amount: u64, from_address: &Address, commit_txid: &Txid) -> (Block, Transaction) {
+    let content_str = format!(r#"{{ "p": "brc-20", "op": "transfer", "tick": "{}", "amt": "{}" }}"#, ticker, amount);
+    let content = content_str.as_bytes();
+    let tx = create_inscription_transaction_to_address(content, "text/plain", Some(OutPoint::new(*commit_txid, 1)), from_address);
+    let block = create_block_with_txs(vec![create_coinbase_transaction(2), tx.clone()]);
+    (block, tx)
+}
+
+pub fn create_test_block_with_brc20_transfer_claim_op(inscribe_tx: &Transaction, to_address: &Address) -> (Block, Transaction) {
+    let prev_out = OutPoint::new(inscribe_tx.txid(), 0);
+    let tx = create_transfer_transaction_to_address(prev_out, to_address);
+    let block = create_block_with_txs(vec![create_coinbase_transaction(3), tx.clone()]);
+    (block, tx)
+}
+
+/// Create a transaction with inscription data in the witness, sending to a specific address
+pub fn create_inscription_transaction_to_address(
+    content: &[u8],
+    content_type: &str,
+    previous_output: Option<OutPoint>,
+    to_address: &Address,
+) -> Transaction {
+    let witness = create_inscription_envelope(content_type.as_bytes(), content);
     
-    let secp = Secp256k1::new();
-    let secret_key = SecretKey::from_slice(&[2u8; 32]).unwrap();
-    let private_key = PrivateKey::new(secret_key, Network::Regtest);
-    let public_key = PublicKey::from_private_key(&secp, &private_key);
-    
-    Address::p2wpkh(&public_key, Network::Regtest).unwrap()
+    let prev_out = previous_output.unwrap_or_else(|| OutPoint {
+        txid: Txid::from_str(
+            "1111111111111111111111111111111111111111111111111111111111111111"
+        ).unwrap(),
+        vout: 0,
+    });
+
+    let txin = TxIn {
+        previous_output: prev_out,
+        script_sig: ScriptBuf::new(),
+        sequence: Sequence::MAX,
+        witness,
+    };
+
+    let txout = TxOut {
+        value: 10000,
+        script_pubkey: to_address.script_pubkey(),
+    };
+
+    Transaction {
+        version: 1,
+        lock_time: bitcoin::absolute::LockTime::ZERO,
+        input: vec![txin],
+        output: vec![txout],
+    }
+}
+
+/// Create a transfer transaction that moves an inscription to a specific address
+pub fn create_transfer_transaction_to_address(previous_output: OutPoint, to_address: &Address) -> Transaction {
+    Transaction {
+        version: 2,
+        lock_time: bitcoin::absolute::LockTime::ZERO,
+        input: vec![TxIn {
+            previous_output,
+            script_sig: ScriptBuf::new(),
+            sequence: bitcoin::Sequence::ENABLE_RBF_NO_LOCKTIME,
+            witness: Witness::new(),
+        }],
+        output: vec![TxOut {
+            value: 10000,
+            script_pubkey: to_address.script_pubkey(),
+        }],
+    }
 }
 
 /// Create a coinbase transaction for testing
 pub fn create_coinbase_transaction(height: u32) -> Transaction {
-    let script_pubkey = get_test_address().script_pubkey();
+    let script_pubkey = get_test_address(0).script_pubkey();
     
     let coinbase_input = TxIn {
         previous_output: OutPoint::default(),
@@ -185,7 +256,7 @@ pub fn create_inscription_transaction(
     content_type: &str,
     previous_output: Option<OutPoint>,
 ) -> Transaction {
-    let witness = create_inscription_witness(content, content_type);
+    let witness = create_inscription_envelope(content_type.as_bytes(), content);
     
     let prev_out = previous_output.unwrap_or_else(|| OutPoint {
         txid: Txid::from_str(
@@ -201,7 +272,7 @@ pub fn create_inscription_transaction(
         witness,
     };
 
-    let address = get_test_address();
+    let address = get_test_address(0);
     let txout = TxOut {
         value: 100_000_000,
         script_pubkey: address.script_pubkey(),
@@ -215,40 +286,6 @@ pub fn create_inscription_transaction(
     }
 }
 
-/// Create inscription witness data following the inscription envelope format
-pub fn create_inscription_witness(content: &[u8], content_type: &str) -> Witness {
-    let mut witness = Witness::new();
-    
-    // Create inscription envelope in witness using raw byte format
-    // This follows the corrected inscription format:
-    // OP_PUSHBYTES_0 OP_IF "ord" field_tag length data field_tag length data OP_ENDIF
-    let mut script = Vec::new();
-    
-    // OP_PUSHBYTES_0
-    script.push(0x00);
-    // OP_IF
-    script.push(0x63);
-    // "ord" tag
-    script.push(0x03); // push 3 bytes
-    script.extend_from_slice(b"ord");
-    
-    // Content type field (tag 1)
-    script.push(0x01); // field tag 1
-    script.push(content_type.len() as u8); // length
-    script.extend_from_slice(content_type.as_bytes()); // data
-    
-    // Content field (tag 0)
-    script.push(0x00); // field tag 0
-    // Content length and data
-    script.push(content.len() as u8);
-    script.extend_from_slice(content);
-    
-    // OP_ENDIF
-    script.push(0x68);
-    
-    witness.push(&script);
-    witness
-}
 
 /// Create a test block with inscription transactions
 pub fn create_inscription_block(inscriptions: Vec<(&[u8], &str)>) -> Block {

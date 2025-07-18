@@ -40,7 +40,7 @@
 //! - **Performance**: System performs well with realistic data volumes
 
 use crate::tests::helpers::*;
-use crate::indexer::ShrewscriptionsIndexer;
+use crate::indexer::InscriptionIndexer;
 use crate::view::*;
 use crate::proto::shrewscriptions::*;
 use bitcoin::Txid;
@@ -73,8 +73,7 @@ fn test_single_inscription_debug() -> Result<()> {
     clear();
     
     // === SETUP PHASE ===
-    let mut indexer = ShrewscriptionsIndexer::new();
-    indexer.reset();
+    let mut indexer = InscriptionIndexer::new();
     
     // Create just one inscription
     let content = b"Hello, Bitcoin!";
@@ -93,7 +92,7 @@ fn test_single_inscription_debug() -> Result<()> {
     assert_eq!(parsed_envelopes.len(), 1, "Expected 1 envelope, found {}", parsed_envelopes.len());
     
     // Index the transaction
-    indexer.index_transaction(&tx, 840000, 1);
+    indexer.index_block(&create_block_with_txs(vec![create_coinbase_transaction(840000), tx.clone()]), 840000).unwrap();
     
     // Test content retrieval
     let inscription_index = 0;
@@ -130,8 +129,7 @@ fn test_complete_inscription_lifecycle() -> Result<()> {
     
     // === SETUP PHASE ===
     // Use the test indexer for consistent behavior
-    let mut indexer = ShrewscriptionsIndexer::new();
-    indexer.reset();
+    let mut indexer = InscriptionIndexer::new();
     
     // Create test inscriptions with various content types
     let inscriptions = vec![
@@ -157,7 +155,7 @@ fn test_complete_inscription_lifecycle() -> Result<()> {
         assert!(!parsed_envelopes.is_empty(), "No envelopes found in transaction {}", i);
         assert_eq!(parsed_envelopes.len(), 1, "Expected 1 envelope, found {} in transaction {}", parsed_envelopes.len(), i);
         
-        indexer.index_transaction(&tx, 840000 + i as u32, 1);
+        indexer.index_block(&create_block_with_txs(vec![create_coinbase_transaction(840000 + i as u32), tx.clone()]), 840000 + i as u32).unwrap();
         txs.push(tx);
     }
     
@@ -236,7 +234,10 @@ fn test_parent_child_relationships() -> Result<()> {
     // Create parent inscription first
     let parent_content = b"I am the parent inscription";
     let parent_witness = create_inscription_envelope(b"text/plain", parent_content);
-    let parent_tx = create_reveal_transaction(&Txid::from_slice(&[0u8; 32]).unwrap(), parent_witness);
+    let mut parent_commit_txid_bytes = [0u8; 32];
+    parent_commit_txid_bytes[30] = 1; // Make it unique
+    let parent_commit_txid = Txid::from_slice(&parent_commit_txid_bytes).unwrap();
+    let parent_tx = create_reveal_transaction(&parent_commit_txid, parent_witness);
     
     // Create block with parent
     let _parent_block = create_block_with_txs(vec![
@@ -245,9 +246,8 @@ fn test_parent_child_relationships() -> Result<()> {
     ]);
     
     // Index parent block
-    let mut indexer = ShrewscriptionsIndexer::new();
-    indexer.reset();
-    indexer.index_transaction(&parent_tx, 840000, 1);
+    let mut indexer = InscriptionIndexer::new();
+    indexer.index_block(&create_block_with_txs(vec![create_coinbase_transaction(840000), parent_tx.clone()]), 840000).unwrap();
     
     // Get parent inscription ID
     let parent_id = format!("{}i0", parent_tx.txid());
@@ -271,8 +271,8 @@ fn test_parent_child_relationships() -> Result<()> {
     let child2_tx = create_reveal_transaction(&child2_commit_txid, child2_witness);
     
     // Index child transactions
-    indexer.index_transaction(&child1_tx, 840001, 1);
-    indexer.index_transaction(&child2_tx, 840001, 2);
+    indexer.index_block(&create_block_with_txs(vec![create_coinbase_transaction(840001), child1_tx.clone()]), 840001).unwrap();
+    indexer.index_block(&create_block_with_txs(vec![create_coinbase_transaction(840002), child2_tx.clone()]), 840002).unwrap();
     
     // === TESTING PHASE ===
     // Test get_children view function
@@ -337,16 +337,18 @@ fn test_inscription_delegation() -> Result<()> {
     clear();
     
     // === SETUP PHASE ===
-    let mut indexer = ShrewscriptionsIndexer::new();
-    indexer.reset();
+    let mut indexer = InscriptionIndexer::new();
     
     // Create delegate inscription with actual content
     let delegate_content = b"This is the actual content that will be delegated";
     let delegate_witness = create_inscription_envelope(b"text/plain", delegate_content);
-    let delegate_tx = create_reveal_transaction(&Txid::from_slice(&[0u8; 32]).unwrap(), delegate_witness);
+    let mut delegate_commit_txid_bytes = [0u8; 32];
+    delegate_commit_txid_bytes[30] = 2; // Make it unique
+    let delegate_commit_txid = Txid::from_slice(&delegate_commit_txid_bytes).unwrap();
+    let delegate_tx = create_reveal_transaction(&delegate_commit_txid, delegate_witness);
     
     // Index delegate inscription
-    indexer.index_transaction(&delegate_tx, 840000, 1);
+    indexer.index_block(&create_block_with_txs(vec![create_coinbase_transaction(840000), delegate_tx.clone()]), 840000).unwrap();
     
     // Get delegate inscription ID
     let delegate_id = format!("{}i0", delegate_tx.txid());
@@ -354,10 +356,13 @@ fn test_inscription_delegation() -> Result<()> {
     // === CREATE DELEGATING INSCRIPTION ===
     // Create delegating inscription (should have no content, just delegate reference)
     let delegating_witness = create_inscription_envelope_with_delegate(b"text/plain", b"", &delegate_id);
-    let delegating_tx = create_reveal_transaction(&delegate_tx.txid(), delegating_witness);
+    let mut delegating_commit_txid_bytes = [0u8; 32];
+    delegating_commit_txid_bytes[30] = 3; // Make it unique
+    let delegating_commit_txid = Txid::from_slice(&delegating_commit_txid_bytes).unwrap();
+    let delegating_tx = create_reveal_transaction(&delegating_commit_txid, delegating_witness);
     
     // Index delegating inscription
-    indexer.index_transaction(&delegating_tx, 840001, 1);
+    indexer.index_block(&create_block_with_txs(vec![create_coinbase_transaction(840001), delegating_tx.clone()]), 840001).unwrap();
     
     // === TESTING PHASE ===
     // Test get_content on delegating inscription (should return delegate's content)
@@ -393,19 +398,21 @@ fn test_inscription_transfers() -> Result<()> {
     // Create initial inscription
     let content = b"This inscription will be transferred";
     let witness = create_inscription_envelope(b"text/plain", content);
-    let initial_tx = create_reveal_transaction(&Txid::from_slice(&[0u8; 32]).unwrap(), witness);
+    let mut initial_commit_txid_bytes = [0u8; 32];
+    initial_commit_txid_bytes[30] = 3; // Make it unique
+    let initial_commit_txid = Txid::from_slice(&initial_commit_txid_bytes).unwrap();
+    let initial_tx = create_reveal_transaction(&initial_commit_txid, witness);
     
     // Index initial inscription
-    let mut indexer = ShrewscriptionsIndexer::new();
-    indexer.reset();
-    indexer.index_transaction(&initial_tx, 840000, 1);
+    let mut indexer = InscriptionIndexer::new();
+    indexer.index_block(&create_block_with_txs(vec![create_coinbase_transaction(840000), initial_tx.clone()]), 840000).unwrap();
     
     // === TRANSFER PHASE ===
     // Create transfer transaction that spends the inscription
     let transfer_tx = create_transfer_transaction(&initial_tx.txid(), 0);
     
     // Index transfer transaction
-    indexer.index_transaction(&transfer_tx, 840001, 1);
+    indexer.index_block(&create_block_with_txs(vec![create_coinbase_transaction(840001), transfer_tx.clone()]), 840001).unwrap();
     
     // === VERIFICATION PHASE ===
     // Verify inscription location has been updated
@@ -435,8 +442,7 @@ fn test_cursed_inscriptions() -> Result<()> {
     clear();
     
     // === SETUP PHASE ===
-    let mut indexer = ShrewscriptionsIndexer::new();
-    indexer.reset();
+    let mut indexer = InscriptionIndexer::new();
     
     // === TEST CURSED SCENARIOS ===
     
@@ -447,17 +453,23 @@ fn test_cursed_inscriptions() -> Result<()> {
     coinbase_tx.input[0].witness = coinbase_witness;
     
     // Index coinbase with inscription (tx_index = 0 means coinbase)
-    indexer.index_transaction(&coinbase_tx, 840000, 0);
+    indexer.index_block(&create_block_with_txs(vec![coinbase_tx.clone()]), 840000).unwrap();
     
     // 2. Test invalid envelope format
     let invalid_witness = create_invalid_envelope();
-    let invalid_tx = create_reveal_transaction(&Txid::from_slice(&[0u8; 32]).unwrap(), invalid_witness);
-    indexer.index_transaction(&invalid_tx, 840000, 1);
+    let mut invalid_commit_txid_bytes = [0u8; 32];
+    invalid_commit_txid_bytes[30] = 4;
+    let invalid_commit_txid = Txid::from_slice(&invalid_commit_txid_bytes).unwrap();
+    let invalid_tx = create_reveal_transaction(&invalid_commit_txid, invalid_witness);
+    indexer.index_block(&create_block_with_txs(vec![create_coinbase_transaction(840001), invalid_tx.clone()]), 840001).unwrap();
     
     // 3. Test multiple envelopes in same input
     let multiple_witness = create_multiple_envelopes_same_input();
-    let multiple_tx = create_reveal_transaction(&Txid::from_slice(&[0u8; 32]).unwrap(), multiple_witness);
-    indexer.index_transaction(&multiple_tx, 840000, 2);
+    let mut multiple_commit_txid_bytes = [0u8; 32];
+    multiple_commit_txid_bytes[30] = 5;
+    let multiple_commit_txid = Txid::from_slice(&multiple_commit_txid_bytes).unwrap();
+    let multiple_tx = create_reveal_transaction(&multiple_commit_txid, multiple_witness);
+    indexer.index_block(&create_block_with_txs(vec![create_coinbase_transaction(840002), multiple_tx.clone()]), 840002).unwrap();
     
     // === VERIFICATION PHASE ===
     // Verify that cursed inscriptions are handled appropriately
@@ -471,8 +483,11 @@ fn test_cursed_inscriptions() -> Result<()> {
     
     let valid_content = b"Valid inscription after cursed ones";
     let valid_witness = create_inscription_envelope(b"text/plain", valid_content);
-    let valid_tx = create_reveal_transaction(&Txid::from_slice(&[0u8; 32]).unwrap(), valid_witness);
-    indexer.index_transaction(&valid_tx, 840001, 1);
+    let mut valid_commit_txid_bytes = [0u8; 32];
+    valid_commit_txid_bytes[30] = 6;
+    let valid_commit_txid = Txid::from_slice(&valid_commit_txid_bytes).unwrap();
+    let valid_tx = create_reveal_transaction(&valid_commit_txid, valid_witness);
+    indexer.index_block(&create_block_with_txs(vec![create_coinbase_transaction(840003), valid_tx.clone()]), 840003).unwrap();
     
     // Verify valid inscription is properly indexed
     let mut get_inscription_req = GetInscriptionRequest::default();
@@ -493,8 +508,7 @@ fn test_all_view_functions_comprehensive() -> Result<()> {
     clear();
     
     // === SETUP COMPREHENSIVE TEST DATA ===
-    let mut indexer = ShrewscriptionsIndexer::new();
-    indexer.reset();
+    let mut indexer = InscriptionIndexer::new();
     
     // Create various types of inscriptions
     let inscriptions = vec![
@@ -514,7 +528,7 @@ fn test_all_view_functions_comprehensive() -> Result<()> {
         commit_txid_bytes[31] = (i + 1) as u8; // Make each commit txid unique
         let commit_txid = Txid::from_slice(&commit_txid_bytes).unwrap();
         let tx = create_reveal_transaction(&commit_txid, witness);
-        indexer.index_transaction(&tx, 840000 + i as u32, 1);
+        indexer.index_block(&create_block_with_txs(vec![create_coinbase_transaction(840000 + i as u32), tx.clone()]), 840000 + i as u32).unwrap();
         txs.push(tx);
     }
     
@@ -686,8 +700,7 @@ fn test_performance_stress() -> Result<()> {
     clear();
     
     // === SETUP LARGE DATASET ===
-    let mut indexer = ShrewscriptionsIndexer::new();
-    indexer.reset();
+    let mut indexer = InscriptionIndexer::new();
     
     // Create a moderate number of inscriptions for performance testing
     let num_inscriptions = 50; // Reasonable for WASM testing
@@ -703,7 +716,7 @@ fn test_performance_stress() -> Result<()> {
         let tx = create_reveal_transaction(&commit_txid, witness);
         
         // Index each inscription
-        indexer.index_transaction(&tx, 840000 + (i / 10), (1 + (i % 10)) as usize);
+        indexer.index_block(&create_block_with_txs(vec![create_coinbase_transaction(840000 + (i/10)), tx.clone()]), 840000 + (i/10)).unwrap();
         txs.push(tx);
     }
     
@@ -757,8 +770,7 @@ fn test_comprehensive_system_integration() -> Result<()> {
     // This test simulates a complete real-world scenario with multiple blocks,
     // various inscription types, relationships, and transfers
     
-    let mut indexer = ShrewscriptionsIndexer::new();
-    indexer.reset();
+    let mut indexer = InscriptionIndexer::new();
     
     // === BLOCK 1: Initial inscriptions ===
     let block1_inscriptions = vec![
@@ -775,7 +787,7 @@ fn test_comprehensive_system_integration() -> Result<()> {
         commit_txid_bytes[31] = (i + 1) as u8; // Make each commit txid unique
         let commit_txid = Txid::from_slice(&commit_txid_bytes).unwrap();
         let tx = create_reveal_transaction(&commit_txid, witness);
-        indexer.index_transaction(&tx, 840000, (i + 1) as usize);
+        indexer.index_block(&create_block_with_txs(vec![create_coinbase_transaction(840000), tx.clone()]), 840000).unwrap();
         block1_txs.push(tx);
     }
     
@@ -785,18 +797,24 @@ fn test_comprehensive_system_integration() -> Result<()> {
     // Create child inscriptions
     let child1_content = b"Child of genesis";
     let child1_witness = create_inscription_envelope_with_parent(b"text/plain", child1_content, &parent_id);
-    let child1_tx = create_reveal_transaction(&block1_txs[0].txid(), child1_witness);
-    indexer.index_transaction(&child1_tx, 840001, 1);
+    let mut child1_commit_txid_bytes = [0u8; 32];
+    child1_commit_txid_bytes[31] = 10; // Make it unique
+    let child1_commit_txid = Txid::from_slice(&child1_commit_txid_bytes).unwrap();
+    let child1_tx = create_reveal_transaction(&child1_commit_txid, child1_witness);
+    indexer.index_block(&create_block_with_txs(vec![create_coinbase_transaction(840001), child1_tx.clone()]), 840001).unwrap();
     
     // Create delegation
     let delegate_id = format!("{}i0", block1_txs[1].txid());
     let delegating_witness = create_inscription_envelope_with_delegate(b"application/json", b"", &delegate_id);
-    let delegating_tx = create_reveal_transaction(&block1_txs[1].txid(), delegating_witness);
-    indexer.index_transaction(&delegating_tx, 840001, 2);
+    let mut delegating_commit_txid_bytes = [0u8; 32];
+    delegating_commit_txid_bytes[31] = 11; // Make it unique
+    let delegating_commit_txid = Txid::from_slice(&delegating_commit_txid_bytes).unwrap();
+    let delegating_tx = create_reveal_transaction(&delegating_commit_txid, delegating_witness);
+    indexer.index_block(&create_block_with_txs(vec![create_coinbase_transaction(840001), delegating_tx.clone()]), 840001).unwrap();
     
     // === BLOCK 3: Transfers ===
     let transfer_tx = create_transfer_transaction(&block1_txs[2].txid(), 0);
-    indexer.index_transaction(&transfer_tx, 840002, 1);
+    indexer.index_block(&create_block_with_txs(vec![create_coinbase_transaction(840002), transfer_tx.clone()]), 840002).unwrap();
     
     // === COMPREHENSIVE VERIFICATION ===
     
@@ -908,8 +926,7 @@ fn test_complete_system_validation() -> Result<()> {
     ];
     
     // 2. Create and index inscriptions using the test indexer to avoid duplicate issues
-    let mut indexer = ShrewscriptionsIndexer::new();
-    indexer.reset();
+    let mut indexer = InscriptionIndexer::new();
     
     let mut txs = Vec::new();
     for (i, (content, content_type)) in inscriptions.iter().enumerate() {
@@ -920,7 +937,7 @@ fn test_complete_system_validation() -> Result<()> {
         let commit_txid = Txid::from_slice(&commit_txid_bytes).unwrap();
         let tx = create_reveal_transaction(&commit_txid, witness);
         
-        indexer.index_transaction(&tx, 840000 + i as u32, (i + 1) as usize);
+        indexer.index_block(&create_block_with_txs(vec![create_coinbase_transaction(840000 + i as u32), tx.clone()]), 840000 + i as u32).unwrap();
         txs.push(tx);
     }
     

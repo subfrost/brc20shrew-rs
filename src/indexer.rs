@@ -8,19 +8,21 @@ use crate::{
     envelope::{parse_inscriptions_from_transaction, Envelope},
     inscription::{Charm, InscriptionEntry, InscriptionId, Rarity, SatPoint},
     tables::*,
+    brc20::Brc20Indexer,
+    utils::get_address_from_txout,
 };
-use bitcoin::{Block, OutPoint, Transaction, Txid};
+use bitcoin::{Block, OutPoint, Transaction, Txid, Network};
 use bitcoin_hashes::Hash;
 use metashrew_support::index_pointer::KeyValuePointer;
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::str::FromStr;
 
 /// Main indexer for processing Bitcoin blocks and extracting inscriptions
 pub struct InscriptionIndexer {
     pub height: u32,
     pub block_hash: bitcoin::BlockHash,
     pub block_time: u32,
+    pub network: Network,
     pub sequence_counter: u32,
     pub blessed_counter: i32,
     pub cursed_counter: i32,
@@ -33,6 +35,7 @@ impl InscriptionIndexer {
             height: 0,
             block_hash: bitcoin::BlockHash::all_zeros(),
             block_time: 0,
+            network: Network::Bitcoin,
             sequence_counter: 0,
             blessed_counter: 0,
             cursed_counter: -1,
@@ -122,7 +125,10 @@ impl InscriptionIndexer {
     ) -> Result<TransactionIndexResult, IndexError> {
         let mut result = TransactionIndexResult::new(tx.txid());
 
-        // Parse inscription envelopes from transaction
+        // Process BRC20 transfers first when inputs are spent
+        self.process_brc20_transfers(tx)?;
+
+        // Parse new inscription envelopes from transaction
         let envelopes = parse_inscriptions_from_transaction(tx)
             .map_err(|_| IndexError::ParseError)?;
 
@@ -130,7 +136,7 @@ impl InscriptionIndexer {
             return Ok(result);
         }
 
-        // Process each inscription envelope
+        // Process each new inscription envelope
         for envelope in envelopes {
             let inscription_result = self.process_inscription_envelope(
                 tx,
@@ -241,6 +247,9 @@ impl InscriptionIndexer {
         // Store inscription in database
         self.store_inscription(&entry, envelope)?;
 
+        // Process BRC20 operations for the new inscription
+        self.process_brc20_inscription(tx, &entry, envelope)?;
+
         Ok(InscriptionIndexResult {
             inscription: entry,
             envelope: envelope.clone(),
@@ -324,16 +333,15 @@ impl InscriptionIndexer {
 
     /// Calculate satpoint for inscription
     fn calculate_satpoint(&self, tx: &Transaction, envelope: &Envelope, _sat_ranges: &SatRanges) -> Result<SatPoint, IndexError> {
-        if envelope.input >= tx.input.len() {
-            return Err(IndexError::InvalidInput);
-        }
+        // An inscription is made on the first sat of the first output of its reveal transaction.
+        // The ord spec allows a pointer to move the inscription to a different output.
+        let vout = envelope.payload.pointer_value().unwrap_or(0) as u32;
+        let offset = 0; // Simplification: offset is within the output, not across all outputs
 
-        let input = &tx.input[envelope.input];
-        let outpoint = input.previous_output;
-
-        // For now, use offset 0 - in a full implementation, this would calculate
-        // the exact sat offset based on the inscription's position in the input
-        let offset = envelope.payload.pointer_value().unwrap_or(0);
+        let outpoint = OutPoint {
+            txid: tx.txid(),
+            vout,
+        };
 
         Ok(SatPoint::new(outpoint, offset))
     }
@@ -350,6 +358,66 @@ impl InscriptionIndexer {
         // This would require input value calculation
         // For now, return 0
         0
+    }
+
+    /// Process a new inscription to see if it's a BRC20 operation
+    fn process_brc20_inscription(&self, tx: &Transaction, entry: &InscriptionEntry, envelope: &Envelope) -> Result<(), IndexError> {
+        if let Some(body) = &envelope.payload.body {
+            if let Some(content_type) = &entry.content_type {
+                if content_type.starts_with("text/plain") || content_type.starts_with("application/json") {
+                    let brc20_indexer = Brc20Indexer::new();
+                    if let Some(operation) = brc20_indexer.parse_operation(body) {
+                        // The owner of a new inscription is the address of the first output
+                        if let Some(first_output) = tx.output.get(0) {
+                            if let Some(address) = get_address_from_txout(first_output, self.network) {
+                                if let Err(e) = brc20_indexer.process_operation(&operation, &entry.id.to_string(), &address.to_string()) {
+                                    println!("BRC20 Process Error: {}", e);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Process a transaction to see if it's spending a BRC20 transfer inscription
+    fn process_brc20_transfers(&self, tx: &Transaction) -> Result<(), IndexError> {
+        let brc20_indexer = Brc20Indexer::new();
+        let transferable_table = Brc20TransferableInscriptions::new();
+        for input in &tx.input {
+            let outpoint_bytes = input.previous_output.txid.as_byte_array()
+                .iter()
+                .chain(input.previous_output.vout.to_le_bytes().iter())
+                .copied()
+                .collect::<Vec<u8>>();
+            
+            let inscription_sequences = OUTPOINT_TO_INSCRIPTIONS.select(&outpoint_bytes).get_list();
+            if inscription_sequences.is_empty() {
+                continue;
+            }
+
+            for seq_bytes in inscription_sequences {
+                let entry_bytes = SEQUENCE_TO_INSCRIPTION_ENTRY.select(&seq_bytes).get();
+                if entry_bytes.is_empty() { continue; }
+
+                if let Ok(entry) = InscriptionEntry::from_bytes(&entry_bytes) {
+                    let inscription_id_str = entry.id.to_string();
+                    if let Some(transfer_info_bytes) = transferable_table.get(&inscription_id_str) {
+                        if let Ok(transfer_info) = serde_json::from_slice::<crate::brc20::TransferInfo>(&transfer_info_bytes) {
+                            if let Some(first_output) = tx.output.get(0) {
+                                if let Some(new_owner) = get_address_from_txout(first_output, self.network) {
+                                    brc20_indexer.claim_transfer(&new_owner.to_string(), &transfer_info).ok();
+                                    transferable_table.delete(&inscription_id_str);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 }
 
@@ -476,260 +544,4 @@ mod tests {
         let _ranges = SatRanges::new();
         // Test would require actual transaction data
     }
-}
-
-/// Simplified indexer for testing inscription indexing logic
-pub struct ShrewscriptionsIndexer {
-    pub sequence_counter: u32,
-    pub blessed_counter: i32,
-    pub cursed_counter: i32,
-    /// Track inscription locations for transfer updates
-    pub inscription_locations: std::collections::HashMap<String, String>,
-}
-
-impl ShrewscriptionsIndexer {
-    pub fn new() -> Self {
-        Self {
-            sequence_counter: 0,
-            blessed_counter: 0,
-            cursed_counter: -1,
-            inscription_locations: std::collections::HashMap::new(),
-        }
-    }
-    
-    /// Load state from global storage (disabled for tests)
-    
-    /// Save state to global storage
-    fn save_state(&self) {
-        // Update the global sequence counter that get_inscriptions uses for pagination
-        GLOBAL_SEQUENCE_COUNTER.clone().set(Arc::new(self.sequence_counter.to_le_bytes().to_vec()));
-        BLESSED_INSCRIPTION_COUNTER.clone().set(Arc::new(self.blessed_counter.to_le_bytes().to_vec()));
-        CURSED_INSCRIPTION_COUNTER.clone().set(Arc::new(self.cursed_counter.to_le_bytes().to_vec()));
-        
-        // DEBUG: Verify the global counter was updated
-        let stored_counter = GLOBAL_SEQUENCE_COUNTER.get();
-        if !stored_counter.is_empty() && stored_counter.len() >= 4 {
-            let counter_value = u32::from_le_bytes([stored_counter[0], stored_counter[1], stored_counter[2], stored_counter[3]]);
-            println!("DEBUG indexer: Updated GLOBAL_SEQUENCE_COUNTER to {}", counter_value);
-        }
-    }
-    
-    /// Reset the indexer state (for testing)
-    pub fn reset(&mut self) {
-        // Clear all table data for clean test state first
-        use metashrew_core::clear;
-        clear();
-        
-        // Explicitly clear the counter storage locations
-        GLOBAL_SEQUENCE_COUNTER.clone().set(Arc::new(vec![]));
-        BLESSED_INSCRIPTION_COUNTER.clone().set(Arc::new(vec![]));
-        CURSED_INSCRIPTION_COUNTER.clone().set(Arc::new(vec![]));
-        
-        // Reset indexer counters to initial values
-        self.sequence_counter = 0;
-        self.blessed_counter = 0;
-        self.cursed_counter = -1;
-        self.inscription_locations.clear();
-        
-        // DO NOT save state during tests - this prevents persistence across test runs
-        // The reset should ensure clean state without persisting it
-    }
-    
-    /// Index a single transaction for inscriptions
-    pub fn index_transaction(&mut self, tx: &Transaction, _height: u32, _tx_index: usize) {
-        use crate::envelope::parse_inscriptions_from_transaction;
-        use crate::tables::*;
-        
-        // First, check if this transaction transfers any existing inscriptions
-        self.update_inscription_locations(tx);
-        
-        // Parse inscription envelopes from transaction
-        if let Ok(envelopes) = parse_inscriptions_from_transaction(tx) {
-            for (envelope_index, envelope) in envelopes.iter().enumerate() {
-                let inscription_id = format!("{}i{}", tx.txid(), envelope_index);
-                
-                // Check if inscription already exists to prevent duplicates
-                let inscription_table = InscriptionTable::new();
-                if inscription_table.get(&inscription_id).is_some() {
-                    // Skip duplicate inscription - this prevents the "Duplicate inscription" error
-                    eprintln!("DEBUG: Skipping duplicate inscription: {}", inscription_id);
-                    continue;
-                }
-                
-                // Store basic inscription data
-                inscription_table.set(&inscription_id, b"indexed");
-                
-                // Create a mock inscription entry for view function compatibility
-                let inscription_id_parts: Vec<&str> = inscription_id.split('i').collect();
-                if inscription_id_parts.len() == 2 {
-                    if let Ok(txid) = bitcoin::Txid::from_str(inscription_id_parts[0]) {
-                        if let Ok(index) = inscription_id_parts[1].parse::<u32>() {
-                            let id = crate::inscription::InscriptionId::new(txid, index);
-                            let satpoint = crate::inscription::SatPoint::new(
-                                bitcoin::OutPoint::new(txid, 0),
-                                0
-                            );
-                            
-                            // Store id_bytes before moving id into entry
-                            let id_bytes = id.to_bytes();
-                            
-                            let entry = crate::inscription::InscriptionEntry::new(
-                                id,
-                                self.blessed_counter,
-                                self.sequence_counter,
-                                satpoint,
-                                840000, // height
-                                0, // fee
-                                1640995200, // timestamp
-                            );
-                            
-                            // Increment sequence counter first
-                            self.sequence_counter += 1;
-                            
-                            // Store in the format expected by view functions
-                            let sequence_bytes = self.sequence_counter.to_le_bytes().to_vec();
-                            let entry_bytes = entry.to_bytes();
-                            
-                            // Core mappings that view functions expect
-                            INSCRIPTION_ID_TO_SEQUENCE.select(&id_bytes).set(std::sync::Arc::new(sequence_bytes.clone()));
-                            SEQUENCE_TO_INSCRIPTION_ENTRY.select(&sequence_bytes).set(std::sync::Arc::new(entry_bytes));
-                            INSCRIPTION_NUMBER_TO_SEQUENCE.select(&(self.blessed_counter as i32).to_le_bytes().to_vec()).set(std::sync::Arc::new(sequence_bytes.clone()));
-                        }
-                    }
-                }
-                
-                // Store content if present - use both table format and production format
-                if let Some(body) = &envelope.payload.body {
-                    let content_table = InscriptionContentTable::new();
-                    content_table.set(&inscription_id, body);
-                    
-                    // Also store in production format for view function compatibility
-                    INSCRIPTION_CONTENT.select(&inscription_id.as_bytes().to_vec()).set(std::sync::Arc::new(body.to_vec()));
-                    
-                    // Debug: Verify content was stored
-                    let stored_content = content_table.get(&inscription_id);
-                    if stored_content.is_none() {
-                        eprintln!("DEBUG: Content storage failed for inscription_id: {}", inscription_id);
-                    } else {
-                        eprintln!("DEBUG: Content stored successfully for inscription_id: {}, content length: {}", inscription_id, stored_content.as_ref().unwrap().len());
-                    }
-                } else {
-                    eprintln!("DEBUG: No content body found for inscription_id: {}", inscription_id);
-                }
-                
-                // Store content type if present
-                if let Some(content_type) = envelope.payload.content_type() {
-                    let content_type_table = InscriptionContentTypeTable::new();
-                    content_type_table.set(&inscription_id, content_type.as_bytes());
-                }
-                
-                // Store metadata if present - use both table format and production format
-                if let Some(metadata) = &envelope.payload.metadata {
-                    let metadata_table = InscriptionMetadataTable::new();
-                    metadata_table.set(&inscription_id, metadata);
-                    
-                    // Also store in production format for view function compatibility
-                    INSCRIPTION_METADATA.select(&inscription_id.as_bytes().to_vec()).set(std::sync::Arc::new(metadata.to_vec()));
-                }
-                
-                // Store parent relationship if present
-                println!("DEBUG indexer: Checking for parent_id in envelope for {}", inscription_id);
-                if let Some(parent_id) = envelope.payload.parent_id() {
-                    let parent_table = InscriptionParentTable::new();
-                    let parent_id_str = parent_id.to_string();
-                    println!("DEBUG indexer: Storing parent relationship from {} to {}", inscription_id, parent_id_str);
-                    parent_table.set(&inscription_id, &parent_id_str);
-                    
-                    // Add to parent's children list
-                    let children_table = InscriptionChildrenTable::new();
-                    let mut children_list = if let Some(existing) = children_table.get(&parent_id_str) {
-                        serde_json::from_slice::<Vec<String>>(&existing).unwrap_or_default()
-                    } else {
-                        Vec::new()
-                    };
-                    children_list.push(inscription_id.clone());
-                    let children_bytes = serde_json::to_vec(&children_list).unwrap();
-                    children_table.set(&parent_id_str, &children_bytes);
-                    
-                    // DEBUG: Verify parent-child relationship was stored
-                    if let Some(stored_children) = children_table.get(&parent_id_str) {
-                        if let Ok(children_vec) = serde_json::from_slice::<Vec<String>>(&stored_children) {
-                            println!("DEBUG indexer: Verified parent {} now has {} children: {:?}", parent_id_str, children_vec.len(), children_vec);
-                        }
-                    }
-                } else {
-                    println!("DEBUG indexer: No parent_id found in envelope for {}", inscription_id);
-                }
-                
-                // Store delegate relationship if present
-                println!("DEBUG indexer: Checking for delegate_id in envelope for {}", inscription_id);
-                if let Some(delegate_id) = envelope.payload.delegate_id() {
-                    let delegate_table = InscriptionDelegateTable::new();
-                    let delegate_id_str = delegate_id.to_string();
-                    println!("DEBUG indexer: Storing delegation from {} to {}", inscription_id, delegate_id_str);
-                    delegate_table.set(&inscription_id, &delegate_id_str);
-                    
-                    // DEBUG: Verify delegation was stored
-                    if let Some(stored_delegate) = delegate_table.get(&inscription_id) {
-                        println!("DEBUG indexer: Verified delegation stored: {} -> {}", inscription_id, stored_delegate);
-                    } else {
-                        println!("DEBUG indexer: ERROR - Delegation storage failed for {}", inscription_id);
-                    }
-                } else {
-                    println!("DEBUG indexer: No delegate_id found in envelope for {}", inscription_id);
-                }
-                
-                // Calculate satpoint based on transaction output value (for offset testing)
-                let offset = if tx.output.len() > 0 && tx.output[0].value > 10000 {
-                    tx.output[0].value - 10000 // Extract offset from value
-                } else {
-                    0
-                };
-                let satpoint = format!("{}:0:{}", tx.txid(), offset);
-                let location_table = InscriptionLocationTable::new();
-                location_table.set(&inscription_id, &satpoint);
-                
-                // Track location for future transfers
-                self.inscription_locations.insert(inscription_id.clone(), satpoint);
-                
-                // Store inscription number (starting from 0)
-                let number_table = InscriptionNumberTable::new();
-                number_table.set(&inscription_id, self.blessed_counter as u64);
-                self.blessed_counter += 1;
-                
-                // Store sat association (simplified)
-                let sat_table = InscriptionSatTable::new();
-                sat_table.set(&inscription_id, 5000000000); // 50 BTC worth of sats
-            }
-        }
-        
-        // Always save state after indexing to update counters
-        self.save_state();
-    }
-    
-    /// Update inscription locations when they are transferred
-    fn update_inscription_locations(&mut self, tx: &Transaction) {
-        use crate::tables::*;
-        
-        // Check each input to see if it spends an output that contains an inscription
-        for input in &tx.input {
-            let prev_txid = input.previous_output.txid;
-            let _prev_vout = input.previous_output.vout;
-            
-            // Look for inscriptions that were at this outpoint
-            // This is a simplified approach - in reality we'd need to track all inscriptions
-            let location_table = InscriptionLocationTable::new();
-            
-            // Find inscriptions that might be at this location
-            for (inscription_id, current_location) in &self.inscription_locations.clone() {
-                if current_location.starts_with(&format!("{}:", prev_txid)) {
-                    // This inscription is being transferred
-                    let new_location = format!("{}:0:0", tx.txid());
-                    location_table.set(inscription_id, &new_location);
-                    self.inscription_locations.insert(inscription_id.clone(), new_location);
-                }
-            }
-        }
-    }
-    
 }

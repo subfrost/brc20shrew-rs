@@ -4,7 +4,7 @@
 //! gets an extra 'e' byte prepended during storage/retrieval.
 
 use crate::tests::helpers::*;
-use crate::indexer::ShrewscriptionsIndexer;
+use crate::indexer::InscriptionIndexer;
 use crate::view::*;
 use crate::proto::shrewscriptions::*;
 use bitcoin::Txid;
@@ -17,8 +17,7 @@ fn test_json_content_with_image_field() -> Result<()> {
     clear();
     
     // === SETUP PHASE ===
-    let mut indexer = ShrewscriptionsIndexer::new();
-    indexer.reset();
+    let mut indexer = InscriptionIndexer::new();
     
     // Create the exact JSON content that's failing
     let json_content = br#"{"name": "Test NFT", "description": "A comprehensive test", "image": "data:image/svg+xml;base64,..."}"#;
@@ -46,7 +45,7 @@ fn test_json_content_with_image_field() -> Result<()> {
     }
     
     // Index the transaction
-    indexer.index_transaction(&tx, 840000, 1);
+    indexer.index_block(&create_block_with_txs(vec![create_coinbase_transaction(840000), tx.clone()]), 840000).unwrap();
     
     // Test content retrieval
     let inscription_index = 0;
@@ -89,8 +88,7 @@ fn test_simple_json_content() -> Result<()> {
     clear();
     
     // === SETUP PHASE ===
-    let mut indexer = ShrewscriptionsIndexer::new();
-    indexer.reset();
+    let mut indexer = InscriptionIndexer::new();
     
     // Create simple JSON content without "image" field
     let json_content = br#"{"name": "Test NFT", "description": "A test inscription"}"#;
@@ -106,7 +104,7 @@ fn test_simple_json_content() -> Result<()> {
     let tx = create_reveal_transaction_at_offset(&commit_txid, witness, 0);
     
     // Index the transaction
-    indexer.index_transaction(&tx, 840000, 1);
+    indexer.index_block(&create_block_with_txs(vec![create_coinbase_transaction(840000), tx.clone()]), 840000).unwrap();
     
     // Test content retrieval
     let inscription_index = 0;

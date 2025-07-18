@@ -46,6 +46,9 @@ pub mod ordinals_fundamental_test;
 #[cfg(test)]
 pub mod content_debug;
 
+#[cfg(test)]
+pub mod brc20_tests;
+
 // === ADDITIONAL TESTS - CURRENTLY DISABLED ===
 // These tests are temporarily disabled but can be re-enabled as needed.
 // The comprehensive_e2e_tests module provides sufficient coverage for completion.

@@ -175,7 +175,7 @@ mod tests {
         // Test creating inscription witness
         let content = b"Hello, Bitcoin!";
         let content_type = "text/plain";
-        let witness = create_inscription_witness(content, content_type);
+        let witness = create_inscription_envelope(content_type.as_bytes(), content);
         
         // Verify witness is not empty
         assert!(!witness.is_empty());
@@ -221,8 +221,8 @@ mod tests {
         clear();
         
         // Test that test addresses are valid
-        let addr1 = get_test_address();
-        let addr2 = get_test_address_2();
+        let addr1 = get_test_address(0);
+        let addr2 = get_test_address(1);
         
         // Verify addresses are different
         assert_ne!(addr1.script_pubkey(), addr2.script_pubkey());
