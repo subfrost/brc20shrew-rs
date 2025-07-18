@@ -5,12 +5,8 @@ use {
 };
 
 use bitcoin::{
-    opcodes::all::*,
-    script::{Instruction, Instructions},
     Script, ScriptBuf,
 };
-use std::collections::BTreeMap;
-use std::str::FromStr;
 
 /// Inscription envelope containing the inscription data
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -145,44 +141,6 @@ pub fn parse_envelope_from_script(
     parse_envelope_from_raw_bytes(script.as_bytes(), input, offset)
 }
 
-/// Parse envelope using Bitcoin script instructions
-fn parse_envelope_from_instructions(
-    script: &Script,
-    input: usize,
-    offset: usize,
-) -> Result<Option<Envelope>, ParseError> {
-    let mut instructions = script.instructions();
-    
-    // Look for inscription envelope pattern
-    while let Some(instruction) = instructions.next() {
-        let instruction = instruction.map_err(|_| ParseError::InvalidScript)?;
-        
-        if matches!(instruction, Instruction::Op(OP_PUSHBYTES_0)) {
-            if let Some(next_instruction) = instructions.next() {
-                let next_instruction = next_instruction.map_err(|_| ParseError::InvalidScript)?;
-                
-                if matches!(next_instruction, Instruction::Op(OP_IF)) {
-                    // Found potential inscription envelope
-                    if let Some(inscription) = parse_inscription_from_script_instructions(&mut instructions)? {
-                        let pushnum = false; // TODO: Implement pushnum detection
-                        let stutter = false; // TODO: Implement stutter detection
-                        
-                        return Ok(Some(Envelope {
-                            input,
-                            offset,
-                            payload: inscription,
-                            pushnum,
-                            stutter,
-                        }));
-                    }
-                }
-            }
-        }
-    }
-
-    Ok(None)
-}
-
 /// Parse envelope from raw bytes (for test helpers)
 fn parse_envelope_from_raw_bytes(
     bytes: &[u8],
@@ -227,156 +185,6 @@ fn parse_envelope_from_raw_bytes(
     }
     
     Ok(None)
-}
-
-/// Parse inscription data from script instructions
-fn parse_inscription_from_instructions(
-    instructions: &mut Instructions,
-) -> Result<Option<Inscription>, ParseError> {
-    let mut inscription = Inscription::new();
-    let mut fields = BTreeMap::new();
-    let mut current_field: Option<Vec<u8>> = None;
-    let mut body_started = false;
-    let mut found_ord_tag = false;
-
-    println!("DEBUG: Starting instruction parsing");
-
-    while let Some(instruction_result) = instructions.next() {
-        let instruction = match instruction_result {
-            Ok(inst) => inst,
-            Err(e) => {
-                println!("DEBUG: Script instruction error: {:?}", e);
-                return Err(ParseError::InvalidScript);
-            }
-        };
-
-        println!("DEBUG: Processing instruction: {:?}", instruction);
-
-        match instruction {
-            Instruction::Op(OP_ENDIF) => {
-                println!("DEBUG: Found OP_ENDIF, ending envelope");
-                break;
-            }
-            Instruction::PushBytes(bytes) if !found_ord_tag => {
-                println!("DEBUG: Looking for 'ord' tag, found: {:?}", bytes.as_bytes());
-                // Check for "ord" protocol identifier
-                if bytes.as_bytes() == b"ord" {
-                    println!("DEBUG: Found 'ord' protocol identifier");
-                    found_ord_tag = true;
-                    continue;
-                }
-            }
-            Instruction::PushBytes(bytes) if found_ord_tag => {
-                let bytes_vec = bytes.as_bytes().to_vec();
-                println!("DEBUG: Processing push bytes: {:?}", bytes_vec);
-                
-                if current_field.is_some() {
-                    // This is field data
-                    let field = current_field.take().unwrap();
-                    
-                    println!("DEBUG: Storing field {:?} with data: {:?}", field, bytes_vec);
-                    
-                    if fields.contains_key(&field) {
-                        inscription.duplicate_field = true;
-                    }
-                    
-                    fields.insert(field.clone(), bytes_vec.clone());
-                    
-                    // Parse known fields
-                    match field.as_slice() {
-                        [1] => {
-                            println!("DEBUG: Setting content_type");
-                            inscription.content_type = Some(bytes_vec);
-                        }
-                        [2] => inscription.pointer = Some(bytes_vec),
-                        [3] => inscription.parent = Some(bytes_vec),
-                        [5] => inscription.metadata = Some(bytes_vec),
-                        [7] => inscription.metaprotocol = Some(bytes_vec),
-                        [9] => inscription.content_encoding = Some(bytes_vec),
-                        [11] => inscription.delegate = Some(bytes_vec),
-                        [13] => inscription.rune = Some(bytes_vec),
-                        tag if tag.len() == 1 && tag[0] % 2 == 0 => {
-                            // Unrecognized even field
-                            inscription.unrecognized_even_field = true;
-                        }
-                        _ => {} // Unrecognized odd field (ignored)
-                    }
-                } else {
-                    // This could be a field tag or body content
-                    println!("DEBUG: Potential field tag or body: {:?}", bytes_vec);
-                    
-                    // Check if this is the body separator (empty push = tag 0)
-                    if bytes_vec.is_empty() {
-                        println!("DEBUG: Found body separator (empty push = tag 0)");
-                        body_started = true;
-                        // Collect all remaining pushdata as body
-                        let mut body = Vec::new();
-                        while let Some(instruction_result) = instructions.next() {
-                            let instruction = instruction_result.map_err(|_| ParseError::InvalidScript)?;
-                            
-                            match instruction {
-                                Instruction::Op(OP_ENDIF) => {
-                                    println!("DEBUG: Found OP_ENDIF in body, ending");
-                                    break;
-                                }
-                                Instruction::PushBytes(bytes) => {
-                                    println!("DEBUG: Adding body chunk: {:?}", bytes.as_bytes());
-                                    body.extend_from_slice(bytes.as_bytes());
-                                }
-                                _ => {
-                                    println!("DEBUG: Ignoring opcode in body: {:?}", instruction);
-                                }
-                            }
-                        }
-                        
-                        if !body.is_empty() {
-                            println!("DEBUG: Setting body with {} bytes", body.len());
-                            inscription.body = Some(body);
-                        } else {
-                            println!("DEBUG: Setting empty body");
-                            inscription.body = Some(Vec::new());
-                        }
-                        break;
-                    } else {
-                        // This is a field tag
-                        println!("DEBUG: Setting current field tag: {:?}", bytes_vec);
-                        current_field = Some(bytes_vec);
-                    }
-                }
-            }
-            _ => {
-                println!("DEBUG: Unhandled instruction: {:?}", instruction);
-                if current_field.is_some() {
-                    // Incomplete field
-                    inscription.incomplete_field = true;
-                    current_field = None;
-                }
-            }
-        }
-    }
-
-    // Check for incomplete field at end
-    if current_field.is_some() {
-        inscription.incomplete_field = true;
-    }
-
-    println!("DEBUG: Found ord tag: {}", found_ord_tag);
-    println!("DEBUG: Final inscription: content_type={:?}, body={:?}",
-             inscription.content_type, inscription.body.as_ref().map(|b| b.len()));
-
-    // Only return inscription if we found the "ord" tag
-    if found_ord_tag {
-        Ok(Some(inscription))
-    } else {
-        Ok(None)
-    }
-}
-
-/// Parse inscription data from script instructions (renamed function)
-fn parse_inscription_from_script_instructions(
-    instructions: &mut Instructions,
-) -> Result<Option<Inscription>, ParseError> {
-    parse_inscription_from_instructions(instructions)
 }
 
 /// Parse inscription from raw bytes (for test helpers)
@@ -593,6 +401,7 @@ impl std::error::Error for ParseError {}
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bitcoin::opcodes::all::*;
     use bitcoin::script::Builder;
 
     #[test]

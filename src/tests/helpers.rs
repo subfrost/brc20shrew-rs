@@ -64,7 +64,6 @@ use bitcoin::{
     address::NetworkChecked, Address, Network,
 };
 use bitcoin::blockdata::block::{Header, Version as BlockVersion};
-use bitcoin::hashes::Hash;
 use bitcoin::{BlockHash, Txid};
 use metashrew_core::{
     clear as clear_base,

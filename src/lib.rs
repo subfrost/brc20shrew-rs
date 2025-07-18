@@ -150,10 +150,4 @@ mod wasm_exports {
         b"tx".as_ptr()
     }
 
-    // Helper function to load input
-    fn load_input() -> Vec<u8> {
-        // This would normally call metashrew host function
-        // For now, return empty vec
-        Vec::new()
-    }
 }

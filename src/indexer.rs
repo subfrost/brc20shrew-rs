@@ -465,7 +465,7 @@ mod tests {
 
     #[test]
     fn test_indexer_initialization() {
-        let mut indexer = InscriptionIndexer::new();
+        let indexer = InscriptionIndexer::new();
         assert_eq!(indexer.sequence_counter, 0);
         assert_eq!(indexer.blessed_counter, 0);
         assert_eq!(indexer.cursed_counter, -1);
@@ -473,7 +473,7 @@ mod tests {
 
     #[test]
     fn test_sat_ranges() {
-        let mut ranges = SatRanges::new();
+        let _ranges = SatRanges::new();
         // Test would require actual transaction data
     }
 }
@@ -498,11 +498,6 @@ impl ShrewscriptionsIndexer {
     }
     
     /// Load state from global storage (disabled for tests)
-    fn load_state(&mut self) {
-        // For the ShrewscriptionsIndexer (test indexer), we don't load any persisted state
-        // This ensures clean state for each test run
-        // The counters remain at their initialized values (0, 0, -1)
-    }
     
     /// Save state to global storage
     fn save_state(&self) {
@@ -719,7 +714,7 @@ impl ShrewscriptionsIndexer {
         // Check each input to see if it spends an output that contains an inscription
         for input in &tx.input {
             let prev_txid = input.previous_output.txid;
-            let prev_vout = input.previous_output.vout;
+            let _prev_vout = input.previous_output.vout;
             
             // Look for inscriptions that were at this outpoint
             // This is a simplified approach - in reality we'd need to track all inscriptions

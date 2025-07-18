@@ -40,7 +40,7 @@
 //! - **Performance**: System performs well with realistic data volumes
 
 use crate::tests::helpers::*;
-use crate::indexer::{InscriptionIndexer, ShrewscriptionsIndexer};
+use crate::indexer::ShrewscriptionsIndexer;
 use crate::view::*;
 use crate::proto::shrewscriptions::*;
 use bitcoin::Txid;
@@ -239,7 +239,7 @@ fn test_parent_child_relationships() -> Result<()> {
     let parent_tx = create_reveal_transaction(&Txid::from_slice(&[0u8; 32]).unwrap(), parent_witness);
     
     // Create block with parent
-    let parent_block = create_block_with_txs(vec![
+    let _parent_block = create_block_with_txs(vec![
         create_coinbase_transaction(840000),
         parent_tx.clone(),
     ]);
@@ -409,7 +409,7 @@ fn test_inscription_transfers() -> Result<()> {
     
     // === VERIFICATION PHASE ===
     // Verify inscription location has been updated
-    let inscription_id = format!("{}i0", initial_tx.txid());
+    let _inscription_id = format!("{}i0", initial_tx.txid());
     
     // Test get_inscription to verify location update
     let mut get_inscription_req = GetInscriptionRequest::default();

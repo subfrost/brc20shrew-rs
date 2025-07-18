@@ -44,26 +44,26 @@ fn test_manual_envelope_inspection() {
             println!("Envelope data: {:?}", envelope_data);
             
             // Now manually parse the fields
-            let mut field_pos = 0;
-            while field_pos < envelope_data.len() {
-                let field_tag = envelope_data[field_pos];
-                field_pos += 1;
+            let mut _field_pos = 0;
+            while _field_pos < envelope_data.len() {
+                let field_tag = envelope_data[_field_pos];
+                _field_pos += 1;
                 
-                println!("Field tag: {} at position {}", field_tag, field_pos - 1);
+                println!("Field tag: {} at position {}", field_tag, _field_pos - 1);
                 
                 if field_tag == 0 {
                     println!("Found body content tag (0)");
                     // This is body content
-                    if field_pos < envelope_data.len() {
-                        let chunk_length = envelope_data[field_pos] as usize;
-                        field_pos += 1;
+                    if _field_pos < envelope_data.len() {
+                        let chunk_length = envelope_data[_field_pos] as usize;
+                        _field_pos += 1;
                         println!("Body chunk length: {}", chunk_length);
                         
-                        if field_pos + chunk_length <= envelope_data.len() {
-                            let chunk_data = &envelope_data[field_pos..field_pos + chunk_length];
+                        if _field_pos + chunk_length <= envelope_data.len() {
+                            let chunk_data = &envelope_data[_field_pos.._field_pos + chunk_length];
                             println!("Body chunk data: {:?}", chunk_data);
                             println!("Body chunk as string: {:?}", String::from_utf8_lossy(chunk_data));
-                            field_pos += chunk_length;
+                            _field_pos += chunk_length;
                         } else {
                             println!("Chunk extends beyond envelope data");
                             break;
@@ -72,18 +72,18 @@ fn test_manual_envelope_inspection() {
                     break; // Body is the last field
                 } else {
                     // Other field
-                    if field_pos < envelope_data.len() {
-                        let field_length = envelope_data[field_pos] as usize;
-                        field_pos += 1;
+                    if _field_pos < envelope_data.len() {
+                        let field_length = envelope_data[_field_pos] as usize;
+                        _field_pos += 1;
                         println!("Field {} length: {}", field_tag, field_length);
                         
-                        if field_pos + field_length <= envelope_data.len() {
-                            let field_data = &envelope_data[field_pos..field_pos + field_length];
+                        if _field_pos + field_length <= envelope_data.len() {
+                            let field_data = &envelope_data[_field_pos.._field_pos + field_length];
                             println!("Field {} data: {:?}", field_tag, field_data);
                             if field_tag == 1 {
                                 println!("Content type: {:?}", String::from_utf8_lossy(field_data));
                             }
-                            field_pos += field_length;
+                            _field_pos += field_length;
                         } else {
                             println!("Field extends beyond envelope data");
                             break;

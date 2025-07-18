@@ -49,7 +49,13 @@ The `Brc20Indexer` will contain the following logic:
     1.  **Inscribe Transfer:** When a `transfer` inscription is created, the user's available balance is reduced.
     2.  **Execute Transfer:** When the `transfer` inscription is sent to another address, the sender's total balance is reduced, and the receiver's balance is increased.
 
-## 3. Implementation Plan
+## 3. Implementation Notes
+
+The initial implementation plan was paused to address significant technical debt arising from a migration of the protobuf toolchain to `prost` and `tonic-build`. This required a full-scale refactoring of the existing codebase to ensure compatibility with the new APIs. This refactoring is now complete. All compilation errors, test failures (including a critical test state leakage issue), and compiler warnings have been resolved. The codebase is stable, and the test suite passes cleanly.
+
+The project is now ready to resume the BRC20 implementation as originally planned.
+
+## 4. Implementation Plan
 
 The implementation will be carried out in the following phases:
 
@@ -67,6 +73,6 @@ The implementation will be carried out in the following phases:
 4.  **Phase 4: Testing:**
     *   Develop a comprehensive test suite to cover all aspects of the BRC20 indexing logic, including valid and invalid operations, edge cases, and state transitions.
 
-## 4. Conclusion
+## 5. Conclusion
 
 This proposal outlines a clear path for implementing BRC20 indexing in our existing system. By adopting a state machine architecture and building on our current infrastructure, we can deliver a robust and efficient solution.
