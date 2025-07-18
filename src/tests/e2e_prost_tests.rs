@@ -12,9 +12,9 @@
 //! - The JSON response is deserialized into the expected `prost`-generated struct.
 //! - Assertions are made on the response fields to verify correctness.
 
-use super::helpers::{create_inscription_envelope, index_block_with_inscriptions};
+use super::helpers::index_test_block;
 use crate::{
-    get_balance,
+    getbalance,
     proto::{GetBalanceRequest, BalanceResponse},
 };
 use metashrew_core::test_utils::TestContext;
@@ -32,14 +32,10 @@ fn test_get_balance_e2e() {
         ticker: "shrew".to_string(),
         address: "bc1paf2gh9zu7xjw3jnuxv292y92daqqc9f5j2f2y2j2g".to_string(),
     };
-    let request_bytes = serde_json::to_vec(&request).unwrap();
 
     // 3. Call View Function
-    let response_bytes = get_balance(&request_bytes).unwrap();
-
-    // 4. Deserialize and Assert
-    let response: BalanceResponse = serde_json::from_slice(&response_bytes).unwrap();
+    let response = getbalance(&request).unwrap();
     
     // TODO: Update this assertion with the expected balance
-    assert_eq!(response.balance, "0"); 
+    assert_eq!(response.balance, "0");
 }

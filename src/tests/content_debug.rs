@@ -6,7 +6,7 @@
 use crate::tests::helpers::*;
 use crate::indexer::InscriptionIndexer;
 use crate::view::*;
-use crate::proto::shrewscriptions::*;
+use crate::proto::*;
 use bitcoin::Txid;
 use bitcoin_hashes::Hash;
 use wasm_bindgen_test::wasm_bindgen_test;

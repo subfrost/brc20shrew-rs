@@ -49,6 +49,9 @@ pub mod content_debug;
 #[cfg(test)]
 pub mod brc20_tests;
 
+#[cfg(test)]
+pub mod e2e_prost_tests;
+
 // === ADDITIONAL TESTS - CURRENTLY DISABLED ===
 // These tests are temporarily disabled but can be re-enabled as needed.
 // The comprehensive_e2e_tests module provides sufficient coverage for completion.

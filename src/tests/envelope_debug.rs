@@ -1,7 +1,7 @@
 //! Debug envelope parsing to isolate content truncation issue
 
 use {
-    metashrew_core::{println, stdio::stdout},
+    metashrew_core::metashrew_println::{println},
     std::fmt::Write
 };
 

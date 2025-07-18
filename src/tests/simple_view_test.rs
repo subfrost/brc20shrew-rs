@@ -5,7 +5,7 @@
 
 use wasm_bindgen_test::*;
 use crate::view::*;
-use crate::proto::shrewscriptions::*;
+use crate::proto::*;
 
 #[wasm_bindgen_test]
 fn test_view_functions_compile() {
