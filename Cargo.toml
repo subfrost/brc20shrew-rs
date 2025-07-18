@@ -31,22 +31,28 @@ thiserror = "1.0"
 bincode = "1.3"
 wasm-bindgen = "0.2"
 wasm-bindgen-test = "0.3"
-getrandom = { version = "0.2", features = ["js"] }
-protobuf = "3.0"
+getrandom = { version = "0.2" }
 prost = "0.12.6"
+revm = { version = "3.5.0", default-features = false, features = ["serde"] }
+revm-database-interface = "3.0.0"
+alloy-primitives = "0.7.6"
+alloy-sol-types = "0.7.6"
+rust-embed = "8.5.0"
+async-trait = "0.1.81"
 
 # Metashrew dependencies (using git since not published to crates.io)
-metashrew-core = { git = "https://github.com/sandshrewmetaprotocols/metashrew", branch = "master", default-features = false }
-metashrew-support = { git = "https://github.com/sandshrewmetaprotocols/metashrew", branch = "master", default-features = false }
+metashrew-core = { git = "https://github.com/sandshrewmetaprotocols/metashrew", branch = "sandshrewmetadev/v9.1.0", default-features = false }
+metashrew-support = { git = "https://github.com/sandshrewmetaprotocols/metashrew", branch = "sandshrewmetadev/v9.1.0", default-features = false }
 ordinals = { git = "https://github.com/ordinals/ord" }
+alkanes-support = { git = "https://github.com/kungfuflex/alkanes-rs", branch = "kungfuflex/moka" }
 
 [dev-dependencies]
 # Testing utilities
-metashrew-core = { git = "https://github.com/sandshrewmetaprotocols/metashrew", features = ["test-utils"], branch = "master", default-features = false }
+metashrew-core = { git = "https://github.com/sandshrewmetaprotocols/metashrew", features = ["test-utils"], branch = "sandshrewmetadev/v9.1.0", default-features = false }
 
 [build-dependencies]
-protobuf-codegen = "3.0"
-tonic-build = "0.12.0"
+protoc-bin-vendored = "3.0.0"
+prost-build = "0.12.6"
 
 [profile.release]
 opt-level = "s"
@@ -58,3 +64,6 @@ panic = "abort"
 opt-level = 0
 debug = true
 overflow-checks = true
+
+[patch.crates-io]
+getrandom = { path = "patches/getrandom-0.2.16" }

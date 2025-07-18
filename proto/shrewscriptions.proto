@@ -2,6 +2,29 @@ syntax = "proto3";
 
 package shrewscriptions;
 
+service Shrewscriptions {
+  rpc get_inscription(GetInscriptionRequest) returns (InscriptionResponse);
+  rpc get_inscriptions(GetInscriptionsRequest) returns (InscriptionsResponse);
+  rpc get_content(GetContentRequest) returns (ContentResponse);
+  rpc get_undelegated_content(GetUndelegatedContentRequest) returns (UndelegatedContentResponse);
+  rpc get_metadata(GetMetadataRequest) returns (MetadataResponse);
+  rpc get_children(GetChildrenRequest) returns (ChildrenResponse);
+  rpc get_parents(GetParentsRequest) returns (ParentsResponse);
+  rpc get_child_inscriptions(GetChildInscriptionsRequest) returns (ChildInscriptionsResponse);
+  rpc get_parent_inscriptions(GetParentInscriptionsRequest) returns (ParentInscriptionsResponse);
+  rpc get_sat_inscriptions(GetSatInscriptionsRequest) returns (SatInscriptionsResponse);
+  rpc get_sat_inscription(GetSatInscriptionRequest) returns (SatInscriptionResponse);
+  rpc get_sat(GetSatRequest) returns (SatResponse);
+  rpc get_utxo(GetUtxoRequest) returns (UtxoResponse);
+  rpc get_block_hash(GetBlockHashRequest) returns (BlockHashResponse);
+  rpc get_block_height(GetBlockHeightRequest) returns (BlockHeightResponse);
+  rpc get_block_time(GetBlockTimeRequest) returns (BlockTimeResponse);
+  rpc get_block_info(GetBlockInfoRequest) returns (BlockInfoResponse);
+  rpc get_transaction(GetTransactionRequest) returns (TransactionResponse);
+  rpc getbalance(GetBalanceRequest) returns (BalanceResponse);
+  rpc getbrc20events(GetBRC20EventsRequest) returns (BRC20EventsResponse);
+}
+
 // Basic inscription identifier
 message InscriptionId {
   bytes txid = 1;
@@ -342,4 +365,36 @@ message GetTransactionRequest {
 
 message TransactionResponse {
   string hex = 1;
+}
+
+// BRC-20 View Functions
+
+message GetBalanceRequest {
+  string address = 1;
+  string ticker = 2;
+}
+
+message BalanceResponse {
+  string balance = 1;
+}
+
+message GetBRC20EventsRequest {
+  oneof query {
+    InscriptionId inscription_id = 1;
+    uint32 block_height = 2;
+  }
+}
+
+message BRC20Event {
+  string event_type = 1;
+  string ticker = 2;
+  string amount = 3;
+  string from = 4;
+  string to = 5;
+  string inscription_id = 6;
+  uint32 block_height = 7;
+}
+
+message BRC20EventsResponse {
+  repeated BRC20Event events = 1;
 }

@@ -10,14 +10,10 @@ pub mod message;
 pub mod ord_inscriptions;
 pub mod brc20;
 pub mod utils;
-use metashrew_core::{input, flush};
+pub mod programmable_brc20;
 
 // Re-export protobuf types
-pub mod proto {
-    pub mod shrewscriptions {
-        include!(concat!(env!("OUT_DIR"), "/shrewscriptions.rs"));
-    }
-}
+pub mod proto;
 
 // Re-export view functions for testing
 pub use view::*;
@@ -26,130 +22,132 @@ pub use view::*;
 #[cfg(any(feature = "test-utils", test))]
 pub mod tests;
 
-// WASM-specific exports - only compile for WASM target
-#[cfg(target_arch = "wasm32")]
-mod wasm_exports {
-    use super::*;
-
-    // Simple WASM entry point for now
-    #[no_mangle]
-    pub extern "C" fn _start() {
-        // Load input (height + block data)
-        let input = input();
-        
-        // Parse height and block
-        let height = u32::from_le_bytes([input[0], input[1], input[2], input[3]]);
-        let block_data = &input[4..];
-        
-        // Try to deserialize block
-        if let Ok(block) = deserialize::<Block>(block_data) {
-            // Create indexer and process block
-            let mut indexer = indexer::InscriptionIndexer::new();
-            let _ = indexer.load_state();
-            let _ = indexer.index_block(&block, height);
-        }
-        flush();
+#[metashrew_core::main]
+fn main_logic(height: u32, block_data: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
+    if let Ok(block) = deserialize::<Block>(block_data) {
+        let mut indexer = indexer::InscriptionIndexer::new();
+        let _ = indexer.load_state();
+        let _ = indexer.index_block(&block, height);
     }
+    Ok(())
+}
 
-    // Placeholder view functions for now
-    #[no_mangle]
-    pub extern "C" fn inscription() -> *const u8 {
-        b"inscription".as_ptr()
-    }
+#[metashrew_core::view]
+fn getinscription(input: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let req = serde_json::from_slice(input)?;
+    Ok(serde_json::to_vec(&view::get_inscription(&req)?)?)
+}
 
-    #[no_mangle]
-    pub extern "C" fn inscriptions() -> *const u8 {
-        b"inscriptions".as_ptr()
-    }
+#[metashrew_core::view]
+fn getinscriptions(input: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let req = serde_json::from_slice(input)?;
+    Ok(serde_json::to_vec(&view::get_inscriptions(&req)?)?)
+}
 
-    #[no_mangle]
-    pub extern "C" fn children() -> *const u8 {
-        b"children".as_ptr()
-    }
+#[metashrew_core::view]
+fn getchildren(input: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let req = serde_json::from_slice(input)?;
+    Ok(serde_json::to_vec(&view::get_children(&req)?)?)
+}
 
-    #[no_mangle]
-    pub extern "C" fn parents() -> *const u8 {
-        b"parents".as_ptr()
-    }
+#[metashrew_core::view]
+fn getparents(input: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let req = serde_json::from_slice(input)?;
+    Ok(serde_json::to_vec(&view::get_parents(&req)?)?)
+}
 
-    #[no_mangle]
-    pub extern "C" fn content() -> *const u8 {
-        b"content".as_ptr()
-    }
+#[metashrew_core::view]
+fn getcontent(input: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let req = serde_json::from_slice(input)?;
+    Ok(serde_json::to_vec(&view::get_content(&req)?)?)
+}
 
-    #[no_mangle]
-    pub extern "C" fn metadata() -> *const u8 {
-        b"metadata".as_ptr()
-    }
+#[metashrew_core::view]
+fn getmetadata(input: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let req = serde_json::from_slice(input)?;
+    Ok(serde_json::to_vec(&view::get_metadata(&req)?)?)
+}
 
-    #[no_mangle]
-    pub extern "C" fn sat() -> *const u8 {
-        b"sat".as_ptr()
-    }
+#[metashrew_core::view]
+fn getsat(input: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let req = serde_json::from_slice(input)?;
+    Ok(serde_json::to_vec(&view::get_sat(&req)?)?)
+}
 
-    #[no_mangle]
-    pub extern "C" fn satinscriptions() -> *const u8 {
-        b"satinscriptions".as_ptr()
-    }
+#[metashrew_core::view]
+fn getsatinscriptions(input: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let req = serde_json::from_slice(input)?;
+    Ok(serde_json::to_vec(&view::get_sat_inscriptions(&req)?)?)
+}
 
-    #[no_mangle]
-    pub extern "C" fn satinscription() -> *const u8 {
-        b"satinscription".as_ptr()
-    }
+#[metashrew_core::view]
+fn getsatinscription(input: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let req = serde_json::from_slice(input)?;
+    Ok(serde_json::to_vec(&view::get_sat_inscription(&req)?)?)
+}
 
-    #[no_mangle]
-    pub extern "C" fn satinscriptioncontent() -> *const u8 {
-        b"satinscriptioncontent".as_ptr()
-    }
+#[metashrew_core::view]
+fn getchildinscriptions(input: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let req = serde_json::from_slice(input)?;
+    Ok(serde_json::to_vec(&view::get_child_inscriptions(&req)?)?)
+}
 
-    #[no_mangle]
-    pub extern "C" fn childinscriptions() -> *const u8 {
-        b"childinscriptions".as_ptr()
-    }
+#[metashrew_core::view]
+fn getparentinscriptions(input: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let req = serde_json::from_slice(input)?;
+    Ok(serde_json::to_vec(&view::get_parent_inscriptions(&req)?)?)
+}
 
-    #[no_mangle]
-    pub extern "C" fn parentinscriptions() -> *const u8 {
-        b"parentinscriptions".as_ptr()
-    }
+#[metashrew_core::view]
+fn getundelegatedcontent(input: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let req = serde_json::from_slice(input)?;
+    Ok(serde_json::to_vec(&view::get_undelegated_content(&req)?)?)
+}
 
-    #[no_mangle]
-    pub extern "C" fn undelegatedcontent() -> *const u8 {
-        b"undelegatedcontent".as_ptr()
-    }
+#[metashrew_core::view]
+fn getutxo(input: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let req = serde_json::from_slice(input)?;
+    Ok(serde_json::to_vec(&view::get_utxo(&req)?)?)
+}
 
-    #[no_mangle]
-    pub extern "C" fn utxo() -> *const u8 {
-        b"utxo".as_ptr()
-    }
+#[metashrew_core::view]
+fn getblockhash(input: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let req = serde_json::from_slice(input)?;
+    Ok(serde_json::to_vec(&view::get_block_hash(&req)?)?)
+}
 
-    #[no_mangle]
-    pub extern "C" fn blockhash() -> *const u8 {
-        b"blockhash".as_ptr()
-    }
+#[metashrew_core::view]
+fn getblockheight(input: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let req = serde_json::from_slice(input)?;
+    Ok(serde_json::to_vec(&view::get_block_height(&req)?)?)
+}
 
-    #[no_mangle]
-    pub extern "C" fn blockhashatheight() -> *const u8 {
-        b"blockhashatheight".as_ptr()
-    }
+#[metashrew_core::view]
+fn getblocktime(input: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let req = serde_json::from_slice(input)?;
+    Ok(serde_json::to_vec(&view::get_block_time(&req)?)?)
+}
 
-    #[no_mangle]
-    pub extern "C" fn blockheight() -> *const u8 {
-        b"blockheight".as_ptr()
-    }
+#[metashrew_core::view]
+fn getblockinfo(input: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let req = serde_json::from_slice(input)?;
+    Ok(serde_json::to_vec(&view::get_block_info(&req)?)?)
+}
 
-    #[no_mangle]
-    pub extern "C" fn blocktime() -> *const u8 {
-        b"blocktime".as_ptr()
-    }
+#[metashrew_core::view]
+fn gettransaction(input: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let req = serde_json::from_slice(input)?;
+    Ok(serde_json::to_vec(&view::get_tx(&req)?)?)
+}
 
-    #[no_mangle]
-    pub extern "C" fn blockinfo() -> *const u8 {
-        b"blockinfo".as_ptr()
-    }
+#[metashrew_core::view]
+fn getbalance(input: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let req = serde_json::from_slice(input)?;
+    Ok(serde_json::to_vec(&view::get_balance(&req)?)?)
+}
 
-    #[no_mangle]
-    pub extern "C" fn tx() -> *const u8 {
-        b"tx".as_ptr()
-    }
-
+#[metashrew_core::view]
+fn getbrc20events(input: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let req = serde_json::from_slice(input)?;
+    Ok(serde_json::to_vec(&view::get_brc20_events(&req)?)?)
 }

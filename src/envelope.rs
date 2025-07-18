@@ -1,6 +1,6 @@
 #[allow(unused_imports)]
 use {
-    metashrew_core::{println, stdio::stdout},
+    metashrew_core::metashrew_println::{println},
     std::fmt::Write
 };
 

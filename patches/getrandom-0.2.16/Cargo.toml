@@ -1,0 +1,7 @@
+[package]
+name = "getrandom"
+version = "0.2.16"
+edition = "2021"
+
+[features]
+custom = []

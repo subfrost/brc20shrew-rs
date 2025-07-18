@@ -1,6 +1,6 @@
 #[allow(unused_imports)]
 use {
-    metashrew_core::{println, stdio::stdout},
+    metashrew_core::metashrew_println::{println},
     std::fmt::Write
 };
 
@@ -9,6 +9,7 @@ use crate::{
     inscription::{Charm, InscriptionEntry, InscriptionId, Rarity, SatPoint},
     tables::*,
     brc20::Brc20Indexer,
+    programmable_brc20::ProgrammableBrc20Indexer,
     utils::get_address_from_txout,
 };
 use bitcoin::{Block, OutPoint, Transaction, Txid, Network};
@@ -249,6 +250,10 @@ impl InscriptionIndexer {
 
         // Process BRC20 operations for the new inscription
         self.process_brc20_inscription(tx, &entry, envelope)?;
+
+        // Process programmable BRC-20 operations
+        let mut prog_indexer = ProgrammableBrc20Indexer::new();
+        prog_indexer.index_programmable_inscription(&entry, &envelope.payload);
 
         Ok(InscriptionIndexResult {
             inscription: entry,

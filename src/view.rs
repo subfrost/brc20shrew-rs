@@ -46,14 +46,14 @@
 
 #[allow(unused_imports)]
 use {
-    metashrew_core::{println, stdio::stdout},
+    metashrew_core::metashrew_println::{println},
     std::fmt::Write
 };
 
 use crate::{
     inscription::{InscriptionId, InscriptionEntry},
     tables::*,
-    proto::shrewscriptions::{
+    proto::{
         GetBlockHashRequest, BlockHashResponse, GetBlockHeightRequest, BlockHeightResponse,
         GetBlockInfoRequest, BlockInfoResponse, GetBlockTimeRequest, BlockTimeResponse,
         GetChildInscriptionsRequest, ChildInscriptionsResponse, GetChildrenRequest, ChildrenResponse,
@@ -64,7 +64,9 @@ use crate::{
         SatInscriptionsResponse, GetSatRequest, SatResponse, GetTransactionRequest, TransactionResponse,
         GetUndelegatedContentRequest, UndelegatedContentResponse, GetUtxoRequest, UtxoResponse,
         InscriptionId as ProtoInscriptionId, SatPoint as ProtoSatPoint, OutPoint as ProtoOutPoint,
-        get_inscription_request::Query as GetInscriptionQuery,
+        get_inscription_request,
+        GetBalanceRequest, BalanceResponse, GetBrc20EventsRequest, Brc20EventsResponse, Brc20Event,
+        get_brc20_events_request,
     },
 };
 use bitcoin::Txid;
@@ -80,50 +82,51 @@ pub fn get_inscription(request: &GetInscriptionRequest) -> Result<InscriptionRes
     let query = request.query.as_ref().ok_or("Request must specify a query")?;
 
     let seq_bytes = match query {
-        GetInscriptionQuery::Id(proto_id) => {
+        get_inscription_request::Query::Id(proto_id) => {
             let inscription_id = InscriptionId {
                 txid: Txid::from_slice(&proto_id.txid).map_err(|e| e.to_string())?,
                 index: proto_id.index,
             };
             INSCRIPTION_ID_TO_SEQUENCE.select(&inscription_id.to_bytes()).get()
         }
-        GetInscriptionQuery::Number(number) => {
+        get_inscription_request::Query::Number(number) => {
             INSCRIPTION_NUMBER_TO_SEQUENCE.select(&number.to_le_bytes().to_vec()).get()
         }
-        GetInscriptionQuery::Sat(_) => {
+        get_inscription_request::Query::Sat(_) => {
             return Err("Query by sat is not yet implemented".to_string());
         }
     };
 
     if seq_bytes.is_empty() {
-        return Ok(InscriptionResponse::default()); // Not found
+        return Ok(InscriptionResponse::default());
     }
 
     let entry_bytes = SEQUENCE_TO_INSCRIPTION_ENTRY.select(&seq_bytes).get();
     if entry_bytes.is_empty() {
-        return Ok(InscriptionResponse::default()); // Inconsistent data
+        return Ok(InscriptionResponse::default());
     }
 
     let entry = InscriptionEntry::from_bytes(&entry_bytes)
         .map_err(|e| format!("Failed to parse inscription entry: {}", e))?;
 
-    let mut response = InscriptionResponse::default();
-    let mut proto_id = ProtoInscriptionId::default();
-    proto_id.txid = entry.id.txid.as_byte_array().to_vec();
-    proto_id.index = entry.id.index;
-    response.id = Some(proto_id);
-    response.number = entry.number;
-    response.content_type = entry.content_type;
-    response.content_length = entry.content_length;
-    response.timestamp = entry.timestamp as i64;
-
-    let mut proto_satpoint = ProtoSatPoint::default();
-    let mut proto_outpoint = ProtoOutPoint::default();
-    proto_outpoint.txid = entry.satpoint.outpoint.txid.as_byte_array().to_vec();
-    proto_outpoint.vout = entry.satpoint.outpoint.vout;
-    proto_satpoint.outpoint = Some(proto_outpoint);
-    proto_satpoint.offset = entry.satpoint.offset;
-    response.satpoint = Some(proto_satpoint);
+    let response = InscriptionResponse {
+        id: Some(ProtoInscriptionId {
+            txid: entry.id.txid.as_byte_array().to_vec(),
+            index: entry.id.index,
+        }),
+        number: entry.number,
+        content_type: Some(entry.content_type.unwrap_or_default()),
+        content_length: entry.content_length,
+        timestamp: entry.timestamp as i64,
+        satpoint: Some(ProtoSatPoint {
+            outpoint: Some(ProtoOutPoint {
+                txid: entry.satpoint.outpoint.txid.as_byte_array().to_vec(),
+                vout: entry.satpoint.outpoint.vout,
+            }),
+            offset: entry.satpoint.offset,
+        }),
+        ..Default::default()
+    };
 
     Ok(response)
 }
@@ -136,17 +139,8 @@ pub fn get_inscriptions(request: &GetInscriptionsRequest) -> Result<Inscriptions
     let mut response = InscriptionsResponse::default();
     
     // Get pagination parameters
-    let limit = if let Some(pagination) = &request.pagination {
-        pagination.limit.max(1).min(100)
-    } else {
-        10
-    };
-
-    let offset = if let Some(pagination) = &request.pagination {
-        pagination.page * limit
-    } else {
-        0
-    };
+    let limit = request.pagination.as_ref().map_or(100, |p| p.limit.max(1).min(100));
+    let offset = request.pagination.as_ref().map_or(0, |p| p.page * limit);
 
     // Get total count from counter
     let sequence_bytes = GLOBAL_SEQUENCE_COUNTER.get();
@@ -168,9 +162,10 @@ pub fn get_inscriptions(request: &GetInscriptionsRequest) -> Result<Inscriptions
         if !entry_bytes.is_empty() {
             // Try to parse the inscription entry to get the ID
             if let Ok(entry) = crate::inscription::InscriptionEntry::from_bytes(&entry_bytes) {
-                let mut proto_id = crate::proto::shrewscriptions::InscriptionId::default();
-                proto_id.txid = entry.id.txid.as_byte_array().to_vec();
-                proto_id.index = entry.id.index;
+                let proto_id = crate::proto::InscriptionId {
+                    txid: entry.id.txid.as_byte_array().to_vec(),
+                    index: entry.id.index,
+                };
                 inscription_ids.push(proto_id);
             }
         }
@@ -179,11 +174,12 @@ pub fn get_inscriptions(request: &GetInscriptionsRequest) -> Result<Inscriptions
     response.ids = inscription_ids;
 
     // Set pagination info
-    let mut pagination = crate::proto::shrewscriptions::PaginationResponse::default();
-    pagination.limit = limit;
-    pagination.page = offset / limit;
-    pagination.total = total;
-    pagination.more = (offset + limit) < (total as u32);
+    let pagination = crate::proto::PaginationResponse {
+        limit,
+        page: offset / limit,
+        total,
+        more: (offset + limit) < (total as u32),
+    };
     response.pagination = Some(pagination);
 
     Ok(response)
@@ -211,9 +207,10 @@ pub fn get_children(request: &GetChildrenRequest) -> Result<ChildrenResponse, St
     for child_seq_bytes in children_seq_list {
         let entry_bytes = SEQUENCE_TO_INSCRIPTION_ENTRY.select(&child_seq_bytes).get();
         if let Ok(entry) = InscriptionEntry::from_bytes(&entry_bytes) {
-            let mut child_proto_id = ProtoInscriptionId::default();
-            child_proto_id.txid = entry.id.txid.as_byte_array().to_vec();
-            child_proto_id.index = entry.id.index;
+            let child_proto_id = ProtoInscriptionId {
+                txid: entry.id.txid.as_byte_array().to_vec(),
+                index: entry.id.index,
+            };
             children_ids.push(child_proto_id);
         }
     }
@@ -243,9 +240,10 @@ pub fn get_parents(request: &GetParentsRequest) -> Result<ParentsResponse, Strin
     for parent_seq_bytes in parents_seq_list {
         let entry_bytes = SEQUENCE_TO_INSCRIPTION_ENTRY.select(&parent_seq_bytes).get();
         if let Ok(entry) = InscriptionEntry::from_bytes(&entry_bytes) {
-            let mut parent_proto_id = ProtoInscriptionId::default();
-            parent_proto_id.txid = entry.id.txid.as_byte_array().to_vec();
-            parent_proto_id.index = entry.id.index;
+            let parent_proto_id = ProtoInscriptionId {
+                txid: entry.id.txid.as_byte_array().to_vec(),
+                index: entry.id.index,
+            };
             parent_ids.push(parent_proto_id);
         }
     }
@@ -282,11 +280,13 @@ pub fn get_content(request: &GetContentRequest) -> Result<ContentResponse, Strin
 
     // If there's a delegate, recursively call get_content
     if let Some(delegate_id) = entry.delegate {
-        let mut delegate_req = GetContentRequest::default();
-        let mut delegate_proto_id = ProtoInscriptionId::default();
-        delegate_proto_id.txid = delegate_id.txid.as_byte_array().to_vec();
-        delegate_proto_id.index = delegate_id.index;
-        delegate_req.id = Some(delegate_proto_id);
+        let delegate_proto_id = ProtoInscriptionId {
+            txid: delegate_id.txid.as_byte_array().to_vec(),
+            index: delegate_id.index,
+        };
+        let delegate_req = GetContentRequest {
+            id: Some(delegate_proto_id),
+        };
         return get_content(&delegate_req);
     }
 
@@ -297,9 +297,7 @@ pub fn get_content(request: &GetContentRequest) -> Result<ContentResponse, Strin
         response.content = content;
     }
 
-    if let Some(content_type) = entry.content_type {
-        response.content_type = Some(content_type);
-    }
+    response.content_type = Some(entry.content_type.unwrap_or_default());
 
     Ok(response)
 }
@@ -390,12 +388,15 @@ pub fn get_child_inscriptions(request: &GetChildInscriptionsRequest) -> Result<C
     for child_seq_bytes in children_seq_list {
         let entry_bytes = SEQUENCE_TO_INSCRIPTION_ENTRY.select(&child_seq_bytes).get();
         if let Ok(entry) = InscriptionEntry::from_bytes(&entry_bytes) {
-            let mut relative = crate::proto::shrewscriptions::RelativeInscription::default();
-            let mut child_proto_id = ProtoInscriptionId::default();
-            child_proto_id.txid = entry.id.txid.as_byte_array().to_vec();
-            child_proto_id.index = entry.id.index;
-            relative.id = Some(child_proto_id);
-            relative.number = entry.number;
+            let child_proto_id = ProtoInscriptionId {
+                txid: entry.id.txid.as_byte_array().to_vec(),
+                index: entry.id.index,
+            };
+            let relative = crate::proto::RelativeInscription {
+                id: Some(child_proto_id),
+                number: entry.number,
+                ..Default::default()
+            };
             children_info.push(relative);
         }
     }
@@ -421,17 +422,17 @@ pub fn get_parent_inscriptions(request: &GetParentInscriptionsRequest) -> Result
     // Get parent and build detailed response
     let parent_table = InscriptionParentTable::new();
     if let Some(parent_id_str) = parent_table.get(&child_id_str) {
-        let mut relative = crate::proto::shrewscriptions::RelativeInscription::default();
+        let mut relative = crate::proto::RelativeInscription::default();
         
         // Set ID
         let parts: Vec<&str> = parent_id_str.split('i').collect();
         if parts.len() == 2 {
             if let Ok(parent_txid) = bitcoin::Txid::from_str(parts[0]) {
                 if let Ok(parent_index) = parts[1].parse::<u32>() {
-                    let mut proto_parent_id = ProtoInscriptionId::default();
-                    proto_parent_id.txid = parent_txid.as_byte_array().to_vec();
-                    proto_parent_id.index = parent_index;
-                    relative.id = Some(proto_parent_id);
+                    relative.id = Some(ProtoInscriptionId {
+                        txid: parent_txid.as_byte_array().to_vec(),
+                        index: parent_index,
+                    });
                 }
             }
         }
@@ -555,7 +556,7 @@ pub fn get_block_time(_request: &GetBlockTimeRequest) -> Result<BlockTimeRespons
 ///
 /// Returns detailed information about a block including hash, height, and statistics.
 pub fn get_block_info(request: &GetBlockInfoRequest) -> Result<BlockInfoResponse, String> {
-    use crate::proto::shrewscriptions::get_block_info_request::Query;
+    use crate::proto::get_block_info_request::Query;
     
     let mut response = BlockInfoResponse::default();
     
@@ -643,4 +644,36 @@ mod tests {
         let result = parse_inscription_id(id_str);
         assert!(result.is_err());
     }
+}
+
+pub fn get_balance(request: &GetBalanceRequest) -> Result<BalanceResponse, String> {
+    let mut response = BalanceResponse::default();
+    let balance_bytes = BRC20_BALANCES.select(&format!("{}:{}", request.address, request.ticker).as_bytes().to_vec()).get();
+    if !balance_bytes.is_empty() {
+        response.balance = String::from_utf8(balance_bytes.to_vec()).unwrap_or_default();
+    }
+    Ok(response)
+}
+
+pub fn get_brc20_events(request: &GetBrc20EventsRequest) -> Result<Brc20EventsResponse, String> {
+    let mut response = Brc20EventsResponse::default();
+    let query = request.query.as_ref().ok_or("Request must specify a query")?;
+    let events_bytes = match query {
+        get_brc20_events_request::Query::InscriptionId(proto_id) => {
+            let inscription_id = InscriptionId {
+                txid: Txid::from_slice(&proto_id.txid).map_err(|e| e.to_string())?,
+                index: proto_id.index,
+            };
+            BRC20_EVENTS.select(&inscription_id.to_string().as_bytes().to_vec()).get()
+        }
+        get_brc20_events_request::Query::BlockHeight(height) => {
+            BRC20_EVENTS.select(&height.to_le_bytes().to_vec()).get()
+        }
+    };
+    if !events_bytes.is_empty() {
+        if let Ok(events) = serde_json::from_slice::<Vec<Brc20Event>>(&events_bytes) {
+            response.events = events;
+        }
+    }
+    Ok(response)
 }
