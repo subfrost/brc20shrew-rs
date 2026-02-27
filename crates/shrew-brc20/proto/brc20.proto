@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+package shrew_brc20;
+
+message InscriptionId {
+  bytes txid = 1;
+  uint32 index = 2;
+}
+
+message GetBalanceRequest {
+  string address = 1;
+  string ticker = 2;
+}
+
+message BalanceResponse {
+  string balance = 1;
+}
+
+message GetBrc20EventsRequest {
+  oneof query {
+    InscriptionId inscription_id = 1;
+    uint32 block_height = 2;
+  }
+}
+
+message Brc20Event {
+  string event_type = 1;
+  string ticker = 2;
+  string amount = 3;
+  string from = 4;
+  string to = 5;
+  string inscription_id = 6;
+  uint32 block_height = 7;
+}
+
+message Brc20EventsResponse {
+  repeated Brc20Event events = 1;
+}

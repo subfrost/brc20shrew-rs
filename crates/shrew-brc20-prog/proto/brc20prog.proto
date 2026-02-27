@@ -1,0 +1,19 @@
+syntax = "proto3";
+package shrew_brc20_prog;
+
+message CallRequest {
+  bytes to = 1;
+  bytes data = 2;
+  optional bytes from = 3;
+}
+
+message CallResponse {
+  bytes result = 1;
+  bool success = 2;
+  string error = 3;
+}
+
+message InscriptionId {
+  bytes txid = 1;
+  uint32 index = 2;
+}

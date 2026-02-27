@@ -30,24 +30,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "alkanes-support"
-version = "0.6.2"
-source = "git+https://github.com/kungfuflex/alkanes-rs?branch=kungfuflex%2Fmoka#5cdb4b43f6a4cb032446e5dfe350809ae8746e46"
-dependencies = [
- "anyhow",
- "bitcoin 0.32.6",
- "flate2",
- "hex",
- "metashrew-support",
- "protobuf 3.7.2",
- "protobuf-codegen 3.7.2",
- "protoc-bin-vendored",
- "protoc-rust",
- "protorune-support",
- "serde",
-]
-
-[[package]]
 name = "allocator-api2"
 version = "0.2.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -353,17 +335,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7c02d123df017efcdfbd739ef81735b36c5ba83ec3c59c80a9d7ecc718f92e50"
 
 [[package]]
-name = "async-trait"
-version = "0.1.88"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e539d3fca749fcee5236ab05e93a52867dd549cc157c8cb7f99595f3cedffdb5"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.104",
-]
-
-[[package]]
 name = "auto_impl"
 version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -586,38 +557,6 @@ dependencies = [
  "glob",
  "threadpool",
  "zeroize",
-]
-
-[[package]]
-name = "brc20shrew"
-version = "0.1.0"
-dependencies = [
- "alkanes-support",
- "alloy-primitives 0.7.7",
- "alloy-sol-types",
- "anyhow",
- "async-trait",
- "bincode",
- "bitcoin 0.30.2",
- "bitcoin_hashes 0.12.0",
- "getrandom 0.2.15",
- "hex",
- "lazy_static",
- "metashrew-core",
- "metashrew-support",
- "once_cell",
- "ordinals 0.0.15",
- "prost",
- "prost-build",
- "protoc-bin-vendored",
- "revm",
- "revm-database-interface",
- "rust-embed",
- "serde",
- "serde_json",
- "thiserror 1.0.69",
- "wasm-bindgen",
- "wasm-bindgen-test",
 ]
 
 [[package]]
@@ -912,32 +851,11 @@ dependencies = [
 
 [[package]]
 name = "derive_more"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4a9b99b9cbbe49445b21764dc0625032a89b145a2642e67603e1c936f5458d05"
-dependencies = [
- "derive_more-impl 1.0.0",
-]
-
-[[package]]
-name = "derive_more"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "093242cf7570c207c83073cf82f79706fe7b8317e98620a47d5be7c3d8497678"
 dependencies = [
- "derive_more-impl 2.0.1",
-]
-
-[[package]]
-name = "derive_more-impl"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cb7330aeadfbe296029522e6c40f315320aba36fc43a5b3632f3795348f3bd22"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.104",
- "unicode-xid",
+ "derive_more-impl",
 ]
 
 [[package]]
@@ -1515,7 +1433,7 @@ dependencies = [
  "metashrew-macros",
  "metashrew-println",
  "metashrew-support",
- "ordinals 0.0.8",
+ "ordinals",
  "protobuf 3.7.2",
  "protobuf-codegen 3.7.2",
  "protoc-bin-vendored",
@@ -1707,30 +1625,6 @@ checksum = "f69dc8f090e996b63e1f96972f0d619f497c9545464c7bddf65e42d38576b3f3"
 dependencies = [
  "bitcoin 0.30.2",
  "derive_more 0.99.20",
- "serde",
- "serde_with",
- "thiserror 1.0.69",
-]
-
-[[package]]
-name = "ordinals"
-version = "0.0.15"
-source = "git+https://github.com/ordinals/ord#6f543aad6254043ec2f21d13a69367fd2a5f0bb6"
-dependencies = [
- "bitcoin 0.32.6",
- "derive_more 1.0.0",
- "serde",
- "serde_with",
- "thiserror 2.0.12",
-]
-
-[[package]]
-name = "ordinals"
-version = "0.6.2"
-source = "git+https://github.com/kungfuflex/alkanes-rs?branch=kungfuflex%2Fmoka#5cdb4b43f6a4cb032446e5dfe350809ae8746e46"
-dependencies = [
- "bitcoin 0.32.6",
- "derive_more 1.0.0",
  "serde",
  "serde_with",
  "thiserror 1.0.69",
@@ -2175,24 +2069,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "protorune-support"
-version = "0.6.2"
-source = "git+https://github.com/kungfuflex/alkanes-rs?branch=kungfuflex%2Fmoka#5cdb4b43f6a4cb032446e5dfe350809ae8746e46"
-dependencies = [
- "anyhow",
- "bech32 0.11.0",
- "bitcoin 0.32.6",
- "hex",
- "metashrew-support",
- "ordinals 0.6.2",
- "protobuf 3.7.2",
- "protobuf-codegen 3.7.2",
- "protoc-bin-vendored",
- "protoc-rust",
- "serde",
-]
-
-[[package]]
 name = "quick-error"
 version = "1.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2511,40 +2387,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "48fd7bd8a6377e15ad9d42a8ec25371b94ddc67abe7c8b9127bec79bebaaae18"
 
 [[package]]
-name = "rust-embed"
-version = "8.7.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "025908b8682a26ba8d12f6f2d66b987584a4a87bc024abc5bbc12553a8cd178a"
-dependencies = [
- "rust-embed-impl",
- "rust-embed-utils",
- "walkdir",
-]
-
-[[package]]
-name = "rust-embed-impl"
-version = "8.7.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6065f1a4392b71819ec1ea1df1120673418bf386f50de1d6f54204d836d4349c"
-dependencies = [
- "proc-macro2",
- "quote",
- "rust-embed-utils",
- "syn 2.0.104",
- "walkdir",
-]
-
-[[package]]
-name = "rust-embed-utils"
-version = "8.7.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f6cc0c81648b20b70c491ff8cce00c1c3b223bb8ed2b5d41f0e54c6c4c0a3594"
-dependencies = [
- "sha2",
- "walkdir",
-]
-
-[[package]]
 name = "rustc-hash"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2702,7 +2544,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9465315bc9d4566e1724f0fffcbcc446268cb522e60f9a27bcded6b19c108113"
 dependencies = [
  "bitcoin_hashes 0.14.0",
- "rand 0.8.5",
  "secp256k1-sys 0.10.1",
 ]
 
@@ -2849,6 +2690,262 @@ name = "shlex"
 version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
+
+[[package]]
+name = "shrew-bitmap"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bitcoin 0.30.2",
+ "bitcoin_hashes 0.12.0",
+ "getrandom 0.2.15",
+ "hex",
+ "lazy_static",
+ "metashrew-core",
+ "metashrew-support",
+ "prost",
+ "prost-build",
+ "protoc-bin-vendored",
+ "regex",
+ "serde",
+ "serde_json",
+ "sha2",
+ "shrew-ord",
+ "shrew-support",
+ "shrew-test-helpers",
+ "thiserror 1.0.69",
+ "wasm-bindgen",
+]
+
+[[package]]
+name = "shrew-brc20"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bincode",
+ "bitcoin 0.30.2",
+ "bitcoin_hashes 0.12.0",
+ "getrandom 0.2.15",
+ "hex",
+ "lazy_static",
+ "metashrew-core",
+ "metashrew-support",
+ "prost",
+ "prost-build",
+ "protoc-bin-vendored",
+ "serde",
+ "serde_json",
+ "sha2",
+ "shrew-ord",
+ "shrew-support",
+ "shrew-test-helpers",
+ "thiserror 1.0.69",
+ "wasm-bindgen",
+ "wasm-bindgen-test",
+]
+
+[[package]]
+name = "shrew-brc20-prog"
+version = "0.1.0"
+dependencies = [
+ "alloy-primitives 0.7.7",
+ "alloy-sol-types",
+ "anyhow",
+ "bincode",
+ "bitcoin 0.30.2",
+ "bitcoin_hashes 0.12.0",
+ "getrandom 0.2.15",
+ "hex",
+ "lazy_static",
+ "metashrew-core",
+ "metashrew-support",
+ "prost",
+ "prost-build",
+ "protoc-bin-vendored",
+ "revm",
+ "revm-database-interface",
+ "serde",
+ "serde_json",
+ "shrew-brc20",
+ "shrew-evm",
+ "shrew-ord",
+ "shrew-support",
+ "shrew-test-helpers",
+ "thiserror 1.0.69",
+ "wasm-bindgen",
+ "wasm-bindgen-test",
+]
+
+[[package]]
+name = "shrew-evm"
+version = "0.1.0"
+dependencies = [
+ "alloy-primitives 0.7.7",
+ "alloy-sol-types",
+ "anyhow",
+ "bincode",
+ "bitcoin 0.30.2",
+ "bitcoin_hashes 0.12.0",
+ "hex",
+ "lazy_static",
+ "metashrew-core",
+ "metashrew-support",
+ "revm",
+ "revm-database-interface",
+ "serde",
+ "serde_json",
+ "sha2",
+ "shrew-ord",
+ "shrew-support",
+ "shrew-test-helpers",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "shrew-ord"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bincode",
+ "bitcoin 0.30.2",
+ "bitcoin_hashes 0.12.0",
+ "getrandom 0.2.15",
+ "hex",
+ "lazy_static",
+ "metashrew-core",
+ "metashrew-support",
+ "once_cell",
+ "prost",
+ "prost-build",
+ "protoc-bin-vendored",
+ "serde",
+ "serde_json",
+ "shrew-support",
+ "shrew-test-helpers",
+ "thiserror 1.0.69",
+ "wasm-bindgen",
+ "wasm-bindgen-test",
+]
+
+[[package]]
+name = "shrew-pow20"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bitcoin 0.30.2",
+ "bitcoin_hashes 0.12.0",
+ "getrandom 0.2.15",
+ "hex",
+ "lazy_static",
+ "metashrew-core",
+ "metashrew-support",
+ "prost",
+ "prost-build",
+ "protoc-bin-vendored",
+ "serde",
+ "serde_json",
+ "sha2",
+ "shrew-ord",
+ "shrew-support",
+ "shrew-test-helpers",
+ "thiserror 1.0.69",
+ "wasm-bindgen",
+]
+
+[[package]]
+name = "shrew-runes"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bincode",
+ "bitcoin 0.30.2",
+ "bitcoin_hashes 0.12.0",
+ "getrandom 0.2.15",
+ "hex",
+ "lazy_static",
+ "metashrew-core",
+ "metashrew-support",
+ "ordinals",
+ "prost",
+ "prost-build",
+ "protoc-bin-vendored",
+ "serde",
+ "serde_json",
+ "sha2",
+ "shrew-ord",
+ "shrew-support",
+ "shrew-test-helpers",
+ "thiserror 1.0.69",
+ "wasm-bindgen",
+ "wasm-bindgen-test",
+]
+
+[[package]]
+name = "shrew-sns"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bitcoin 0.30.2",
+ "bitcoin_hashes 0.12.0",
+ "getrandom 0.2.15",
+ "hex",
+ "lazy_static",
+ "metashrew-core",
+ "metashrew-support",
+ "prost",
+ "prost-build",
+ "protoc-bin-vendored",
+ "serde",
+ "serde_json",
+ "sha2",
+ "shrew-ord",
+ "shrew-support",
+ "shrew-test-helpers",
+ "thiserror 1.0.69",
+ "wasm-bindgen",
+]
+
+[[package]]
+name = "shrew-support"
+version = "0.1.0"
+dependencies = [
+ "bincode",
+ "bitcoin 0.30.2",
+ "bitcoin_hashes 0.12.0",
+ "hex",
+ "metashrew-support",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "shrew-test-helpers"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bincode",
+ "bitcoin 0.30.2",
+ "bitcoin_hashes 0.12.0",
+ "hex",
+ "metashrew-core",
+ "metashrew-support",
+ "ordinals",
+ "serde",
+ "serde_json",
+ "sha2",
+ "shrew-bitmap",
+ "shrew-brc20",
+ "shrew-brc20-prog",
+ "shrew-evm",
+ "shrew-ord",
+ "shrew-pow20",
+ "shrew-runes",
+ "shrew-sns",
+ "shrew-support",
+ "wasm-bindgen-test",
+]
 
 [[package]]
 name = "signature"

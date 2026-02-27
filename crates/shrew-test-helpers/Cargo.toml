@@ -1,0 +1,32 @@
+[package]
+name = "shrew-test-helpers"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Shared test utilities for the shrew indexer workspace"
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+shrew-support = { workspace = true }
+shrew-ord = { workspace = true, default-features = false }
+shrew-brc20 = { workspace = true, default-features = false }
+shrew-runes = { workspace = true, default-features = false }
+shrew-bitmap = { workspace = true, default-features = false }
+shrew-sns = { workspace = true, default-features = false }
+shrew-pow20 = { workspace = true, default-features = false }
+shrew-evm = { workspace = true }
+shrew-brc20-prog = { workspace = true, default-features = false }
+bitcoin = { workspace = true }
+bitcoin_hashes = { workspace = true }
+ordinals = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+bincode = { workspace = true }
+hex = { workspace = true }
+sha2 = { workspace = true }
+anyhow = { workspace = true }
+metashrew-core = { git = "https://github.com/sandshrewmetaprotocols/metashrew", features = ["test-utils"], branch = "sandshrewmetadev/v9.1.0", default-features = false }
+metashrew-support = { workspace = true }
+wasm-bindgen-test = { workspace = true }

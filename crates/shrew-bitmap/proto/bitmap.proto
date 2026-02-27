@@ -1,0 +1,25 @@
+syntax = "proto3";
+package shrew_bitmap;
+
+message InscriptionId {
+  bytes txid = 1;
+  uint32 index = 2;
+}
+
+message GetBitmapRequest {
+  uint64 bitmap_number = 1;
+}
+
+message BitmapResponse {
+  uint64 bitmap_number = 1;
+  InscriptionId inscription_id = 2;
+  uint32 block_height = 3;
+}
+
+message GetBitmapsByHeightRequest {
+  uint32 block_height = 1;
+}
+
+message BitmapsByHeightResponse {
+  repeated BitmapResponse bitmaps = 1;
+}

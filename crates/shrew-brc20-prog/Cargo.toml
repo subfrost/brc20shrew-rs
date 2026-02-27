@@ -1,0 +1,46 @@
+[package]
+name = "shrew-brc20-prog"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "BRC20-prog (programmable BRC20) indexer WASM program for the shrew suite"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = ["entrypoint"]
+entrypoint = []
+
+[dependencies]
+shrew-support = { workspace = true }
+shrew-ord = { workspace = true, default-features = false }
+shrew-brc20 = { workspace = true, default-features = false }
+shrew-evm = { workspace = true }
+bitcoin = { workspace = true }
+bitcoin_hashes = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+bincode = { workspace = true }
+hex = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+lazy_static = { workspace = true }
+prost = { workspace = true }
+revm = { workspace = true }
+revm-database-interface = { workspace = true }
+alloy-primitives = { workspace = true }
+alloy-sol-types = { workspace = true }
+wasm-bindgen = { workspace = true }
+getrandom = { workspace = true }
+metashrew-core = { workspace = true }
+metashrew-support = { workspace = true }
+
+[dev-dependencies]
+metashrew-core = { git = "https://github.com/sandshrewmetaprotocols/metashrew", features = ["test-utils"], branch = "sandshrewmetadev/v9.1.0", default-features = false }
+wasm-bindgen-test = { workspace = true }
+shrew-test-helpers = { workspace = true }
+
+[build-dependencies]
+prost-build = { workspace = true }
+protoc-bin-vendored = { workspace = true }

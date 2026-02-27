@@ -1,0 +1,33 @@
+syntax = "proto3";
+package shrew_pow20;
+
+message InscriptionId {
+  bytes txid = 1;
+  uint32 index = 2;
+}
+
+message GetPow20BalanceRequest {
+  string address = 1;
+  string ticker = 2;
+}
+
+message Pow20BalanceResponse {
+  string balance = 1;
+}
+
+message GetPow20EventsRequest {
+  uint32 block_height = 1;
+}
+
+message Pow20Event {
+  string event_type = 1;
+  string ticker = 2;
+  string amount = 3;
+  string address = 4;
+  string inscription_id = 5;
+  uint32 block_height = 6;
+}
+
+message Pow20EventsResponse {
+  repeated Pow20Event events = 1;
+}

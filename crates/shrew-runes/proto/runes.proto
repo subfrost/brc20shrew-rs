@@ -1,0 +1,76 @@
+syntax = "proto3";
+
+package shrew_runes;
+
+message RuneId {
+  uint64 block = 1;
+  uint32 tx = 2;
+}
+
+message RuneEntry {
+  RuneId id = 1;
+  string name = 2;
+  string spaced_name = 3;
+  uint32 divisibility = 4;
+  optional string symbol = 5;
+  uint32 spacers = 6;
+  uint64 premine = 7;
+  optional RuneTerms terms = 8;
+  bool turbo = 9;
+  uint64 mints = 10;
+  string supply = 11;
+  uint32 etching_height = 12;
+  bytes etching_txid = 13;
+}
+
+message RuneTerms {
+  optional string amount = 1;
+  optional string cap = 2;
+  optional uint64 height_start = 3;
+  optional uint64 height_end = 4;
+  optional uint64 offset_start = 5;
+  optional uint64 offset_end = 6;
+}
+
+message RuneBalance {
+  RuneId rune_id = 1;
+  string amount = 2;
+}
+
+message RuneEvent {
+  uint32 event_type = 1;  // 0=input, 1=new-allocation, 2=mint, 3=output, 4=burn
+  RuneId rune_id = 2;
+  string amount = 3;
+  bytes txid = 4;
+  uint32 vout = 5;
+  string address = 6;
+  uint32 block_height = 7;
+}
+
+message GetRuneRequest {
+  oneof query {
+    RuneId id = 1;
+    string name = 2;
+  }
+}
+
+message GetRuneResponse {
+  RuneEntry entry = 1;
+}
+
+message GetRuneBalanceRequest {
+  bytes txid = 1;
+  uint32 vout = 2;
+}
+
+message GetRuneBalanceResponse {
+  repeated RuneBalance balances = 1;
+}
+
+message GetRuneEventsRequest {
+  uint32 block_height = 1;
+}
+
+message GetRuneEventsResponse {
+  repeated RuneEvent events = 1;
+}

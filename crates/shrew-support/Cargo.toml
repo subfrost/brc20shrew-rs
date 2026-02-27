@@ -1,0 +1,20 @@
+[package]
+name = "shrew-support"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Shared types and utilities for the shrew indexer family"
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+bitcoin = { workspace = true }
+bitcoin_hashes = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+bincode = { workspace = true }
+hex = { workspace = true }
+thiserror = { workspace = true }
+sha2 = { workspace = true }
+metashrew-support = { workspace = true }

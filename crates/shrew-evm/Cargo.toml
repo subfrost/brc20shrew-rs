@@ -1,0 +1,33 @@
+[package]
+name = "shrew-evm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "EVM database and precompiles for BRC20-prog on metashrew"
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+shrew-support = { workspace = true }
+shrew-ord = { workspace = true }
+bitcoin = { workspace = true }
+bitcoin_hashes = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+bincode = { workspace = true }
+hex = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+lazy_static = { workspace = true }
+revm = { workspace = true }
+revm-database-interface = { workspace = true }
+alloy-primitives = { workspace = true }
+alloy-sol-types = { workspace = true }
+sha2 = { workspace = true }
+metashrew-core = { workspace = true }
+metashrew-support = { workspace = true }
+
+[dev-dependencies]
+metashrew-core = { git = "https://github.com/sandshrewmetaprotocols/metashrew", features = ["test-utils"], branch = "sandshrewmetadev/v9.1.0", default-features = false }
+shrew-test-helpers = { workspace = true }

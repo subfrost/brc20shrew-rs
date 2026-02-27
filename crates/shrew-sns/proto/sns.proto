@@ -1,0 +1,35 @@
+syntax = "proto3";
+package shrew_sns;
+
+message InscriptionId {
+  bytes txid = 1;
+  uint32 index = 2;
+}
+
+message GetSnsNameRequest {
+  string name = 1;
+}
+
+message SnsNameResponse {
+  string name = 1;
+  InscriptionId inscription_id = 2;
+  uint32 block_height = 3;
+}
+
+message GetSnsNamespaceRequest {
+  string namespace = 1;
+}
+
+message SnsNamespaceResponse {
+  string namespace = 1;
+  InscriptionId inscription_id = 2;
+  uint32 block_height = 3;
+}
+
+message GetSnsNamesByHeightRequest {
+  uint32 block_height = 1;
+}
+
+message SnsNamesByHeightResponse {
+  repeated SnsNameResponse names = 1;
+}
