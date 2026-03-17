@@ -10,6 +10,7 @@ use shrew_evm::tables::{
     CONTRACT_ADDRESS_TO_INSCRIPTION_ID, INSCRIPTION_ID_TO_CONTRACT_ADDRESS,
     EVM_ACCOUNTS, CODE_HASH_TO_BYTECODE,
 };
+use shrew_brc20::tables::Brc20ProgDeposits;
 use shrew_evm::ShrewPrecompiles;
 use crate::controller::{CONTROLLER_ADDRESS, controller_bytecode};
 use revm::primitives::{Address, Bytes, U256, B256, TxKind};
@@ -171,7 +172,11 @@ impl ProgrammableBrc20Indexer {
         self.ensure_controller_deployed();
 
         let seq_bytes = GLOBAL_SEQUENCE_COUNTER.get();
-        if seq_bytes.is_empty() { return; }
+        if seq_bytes.is_empty() {
+            // Still process pending deposits even if no inscriptions
+            self.process_pending_deposits(height);
+            return;
+        }
         let max_seq = u32::from_le_bytes(seq_bytes[..4].try_into().unwrap_or([0; 4]));
 
         for seq in 1..=max_seq {
@@ -210,6 +215,34 @@ impl ProgrammableBrc20Indexer {
                 }
             }
         }
+
+        // Process any BRC20 deposit events from the BRC-20 indexer
+        self.process_pending_deposits(height);
+    }
+
+    /// Process pending BRC20-PROG deposit events from the BRC-20 indexer.
+    /// For each deposit, call controller_mint to create EVM-side token representation.
+    fn process_pending_deposits(&mut self, height: u32) {
+        let deposits_table = Brc20ProgDeposits::new();
+        let events = deposits_table.get(height);
+        if events.is_empty() { return; }
+
+        for event in &events {
+            // The sender address is a Bitcoin address string.
+            // For EVM representation, we hash it to get a deterministic 20-byte address.
+            let recipient = {
+                use sha2::{Sha256, Digest};
+                let mut hasher = Sha256::new();
+                hasher.update(event.sender.as_bytes());
+                let hash = hasher.finalize();
+                Address::from_slice(&hash[..20])
+            };
+
+            self.controller_mint(&event.ticker, recipient, U256::from(event.amount));
+        }
+
+        // Clear processed deposits
+        deposits_table.clear(height);
     }
 
     fn execute_deploy(&mut self, entry: &InscriptionEntry, op: DeployOp) {

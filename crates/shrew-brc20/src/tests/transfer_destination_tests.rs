@@ -662,3 +662,98 @@ fn test_full_lifecycle_inscribe_classify_resolve_prog_deposit() {
     let prog_balance: Balance = serde_json::from_slice(&prog_data).unwrap();
     assert_eq!(prog_balance.total_balance, 500 * SCALE);
 }
+
+// ============================================================================
+// Deposit event recording tests
+// ============================================================================
+
+use crate::tables::{Brc20ProgDeposits, DepositEvent};
+
+#[test]
+fn test_brc20_prog_deposit_records_event() {
+    clear();
+    let indexer = Brc20Indexer::new();
+
+    // Deploy 6-byte ticker
+    let deploy = Brc20Operation::Deploy {
+        ticker: "abcdef".to_string(),
+        max_supply: 21_000_000 * SCALE,
+        limit_per_mint: 1000 * SCALE,
+        decimals: 18,
+        self_mint: false,
+    };
+    indexer.process_operation(&deploy, "deploy_0i0", "bc1qdeployer").unwrap();
+    let mint = Brc20Operation::Mint { ticker: "abcdef".to_string(), amount: 1000 * SCALE };
+    indexer.process_operation(&mint, "mint_0i0", "bc1qsender").unwrap();
+    inscribe_transfer(&indexer, "abcdef", 400 * SCALE, "bc1qsender", "xfer_0i0");
+
+    let info = transfer_info("abcdef", 400 * SCALE, "bc1qsender");
+    // Deposit at phase 1 height — should record event
+    indexer.resolve_transfer(TransferDestination::Brc20ProgDeposit, &info, 912690).unwrap();
+
+    // Check deposit event was recorded
+    let events = Brc20ProgDeposits::new().get(912690);
+    assert_eq!(events.len(), 1, "Should have 1 deposit event");
+    assert_eq!(events[0].ticker, "abcdef");
+    assert_eq!(events[0].amount, 400 * SCALE);
+    assert_eq!(events[0].sender, "bc1qsender");
+}
+
+#[test]
+fn test_brc20_prog_deposit_burn_does_not_record_event() {
+    clear();
+    let indexer = Brc20Indexer::new();
+
+    // 4-byte ticker — deposit should burn (before phase 2), NOT record event
+    setup_sender(&indexer, "ordi", 1000 * SCALE, "bc1qsender");
+    inscribe_transfer(&indexer, "ordi", 400 * SCALE, "bc1qsender", "xfer_0i0");
+
+    let info = transfer_info("ordi", 400 * SCALE, "bc1qsender");
+    indexer.resolve_transfer(TransferDestination::Brc20ProgDeposit, &info, 912690).unwrap();
+
+    // No deposit event (burned instead)
+    let events = Brc20ProgDeposits::new().get(912690);
+    assert_eq!(events.len(), 0, "Burn should NOT record deposit event");
+}
+
+#[test]
+fn test_brc20_prog_deposit_events_accumulate() {
+    clear();
+    let indexer = Brc20Indexer::new();
+
+    let deploy = Brc20Operation::Deploy {
+        ticker: "abcdef".to_string(),
+        max_supply: 21_000_000 * SCALE,
+        limit_per_mint: 1000 * SCALE,
+        decimals: 18,
+        self_mint: false,
+    };
+    indexer.process_operation(&deploy, "deploy_0i0", "bc1qdeployer").unwrap();
+    let mint = Brc20Operation::Mint { ticker: "abcdef".to_string(), amount: 1000 * SCALE };
+    indexer.process_operation(&mint, "mint_0i0", "bc1qsender").unwrap();
+
+    // Two deposits at same height
+    inscribe_transfer(&indexer, "abcdef", 200 * SCALE, "bc1qsender", "xfer1_0i0");
+    let info1 = transfer_info("abcdef", 200 * SCALE, "bc1qsender");
+    indexer.resolve_transfer(TransferDestination::Brc20ProgDeposit, &info1, 912690).unwrap();
+
+    inscribe_transfer(&indexer, "abcdef", 300 * SCALE, "bc1qsender", "xfer2_0i0");
+    let info2 = transfer_info("abcdef", 300 * SCALE, "bc1qsender");
+    indexer.resolve_transfer(TransferDestination::Brc20ProgDeposit, &info2, 912690).unwrap();
+
+    let events = Brc20ProgDeposits::new().get(912690);
+    assert_eq!(events.len(), 2, "Should have 2 deposit events");
+    assert_eq!(events[0].amount, 200 * SCALE);
+    assert_eq!(events[1].amount, 300 * SCALE);
+}
+
+#[test]
+fn test_brc20_prog_deposit_events_clear() {
+    clear();
+    let deposits = Brc20ProgDeposits::new();
+    deposits.push(100, &DepositEvent { ticker: "test".to_string(), amount: 1000, sender: "bc1q".to_string() });
+    assert_eq!(deposits.get(100).len(), 1);
+
+    deposits.clear(100);
+    assert_eq!(deposits.get(100).len(), 0, "Clear should remove all events for height");
+}

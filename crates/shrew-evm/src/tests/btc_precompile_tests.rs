@@ -593,3 +593,70 @@ fn test_bip322_gas_cost() {
     // Whether it succeeds or fails, gas_used should be GAS_BIP322_VERIFY
     assert_eq!(result.gas_used, GAS_BIP322_VERIFY, "Gas should be GAS_BIP322_VERIFY");
 }
+
+#[test]
+fn test_bip322_real_taproot_signature() {
+    clear();
+    let txid = B256::ZERO;
+
+    // Real BIP322 test vector from bip322 crate / BIP-322 specification:
+    // Address: bc1ppv609nr0vr25u07u95waq5lucwfm6tde4nydujnu8npg4q75mr5sxq8lt3
+    // Message: "Hello World"
+    // Signature (base64): AUHd69PrJQEv+oKTfZ8l+WROBHuy9HKrbFCJu7U1iK2iiEy1vMU5EfMtjc+VSHM7aU0SDbak5IUZRVno2P5mjSafAQ==
+
+    // P2TR pkscript for bc1ppv609nr0vr25u07u95waq5lucwfm6tde4nydujnu8npg4q75mr5sxq8lt3
+    let pkscript = hex::decode("51200b34f2cc6f60d54e3fdc2d1dd053fcc393bd2db9acc8de4a7c3cc28a83d4d8e9").unwrap();
+
+    // Message
+    let message = b"Hello World";
+
+    // Signature: base64 decode of the BIP322 witness
+    let sig_base64 = "AUHd69PrJQEv+oKTfZ8l+WROBHuy9HKrbFCJu7U1iK2iiEy1vMU5EfMtjc+VSHM7aU0SDbak5IUZRVno2P5mjSafAQ==";
+    // This is consensus-encoded witness bytes
+    let sig_bytes = {
+        // Base64 decode
+        let alphabet = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        let mut result = Vec::new();
+        let chars: Vec<u8> = sig_base64.bytes().filter(|b| *b != b'=').collect();
+        for chunk in chars.chunks(4) {
+            let mut val = 0u32;
+            for (i, &c) in chunk.iter().enumerate() {
+                let idx = alphabet.iter().position(|&a| a == c).unwrap_or(0) as u32;
+                val |= idx << (6 * (3 - i));
+            }
+            result.push((val >> 16) as u8);
+            if chunk.len() > 2 { result.push((val >> 8) as u8); }
+            if chunk.len() > 3 { result.push(val as u8); }
+        }
+        result
+    };
+
+    let input = build_bip322_input(&pkscript, message, &sig_bytes);
+    let result = execute_precompile(&PRECOMPILE_BIP322, &input, 100_000, txid, 840000).unwrap();
+
+    // With the bip322 crate integrated, this should verify successfully
+    assert!(result.success, "BIP322 verification call should succeed");
+    assert_eq!(result.output.len(), 32, "Output should be 32 bytes");
+    assert_eq!(result.output[31], 1, "Real signature should verify as true");
+}
+
+#[test]
+fn test_bip322_wrong_message_fails() {
+    clear();
+    let txid = B256::ZERO;
+
+    // Same address + signature as above, but WRONG message
+    let pkscript = hex::decode("51200b34f2cc6f60d54e3fdc2d1dd053fcc393bd2db9acc8de4a7c3cc28a83d4d8e9").unwrap();
+
+    let sig_bytes = hex::decode("0141ddebd3eb25012ffa82937d9f25f9644e047bb2f472ab6c5089bbb53588ada2884cb5bcc53911f32d8dcf9548733b694d120db6a4e485194559e8d8fe668d269f01").unwrap();
+
+    // Wrong message — should fail verification
+    let input = build_bip322_input(&pkscript, b"Wrong Message", &sig_bytes);
+    let result = execute_precompile(&PRECOMPILE_BIP322, &input, 100_000, txid, 840000).unwrap();
+
+    // Should fail verification (either success=false or output[31]=0)
+    if result.success {
+        assert_eq!(result.output[31], 0, "Wrong message should return false");
+    }
+    // If !result.success, that's also correct (verification error)
+}

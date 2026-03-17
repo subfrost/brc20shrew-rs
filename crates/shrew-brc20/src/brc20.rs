@@ -577,6 +577,13 @@ impl Brc20Indexer {
                         sender_balance.total_balance -= transfer_info.amount;
                         balances_table.set(&transfer_info.sender, ticker, &serde_json::to_vec(&sender_balance)?);
                     }
+
+                    // Record deposit event for prog indexer to process
+                    Brc20ProgDeposits::new().push(height, &DepositEvent {
+                        ticker: ticker.clone(),
+                        amount: transfer_info.amount,
+                        sender: transfer_info.sender.clone(),
+                    });
                 }
             }
             TransferDestination::SentAsFee => {
