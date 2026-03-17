@@ -3128,6 +3128,7 @@ dependencies = [
  "revm",
  "serde",
  "serde_json",
+ "sha2",
  "shrew-brc20",
  "shrew-evm",
  "shrew-ord",

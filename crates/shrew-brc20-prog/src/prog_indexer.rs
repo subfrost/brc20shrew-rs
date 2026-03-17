@@ -6,28 +6,34 @@ use shrew_ord::tables::{
     SEQUENCE_TO_INSCRIPTION_ENTRY, INSCRIPTION_CONTENT, GLOBAL_SEQUENCE_COUNTER,
 };
 use shrew_evm::database::MetashrewDB;
-use shrew_evm::tables::{CONTRACT_ADDRESS_TO_INSCRIPTION_ID, INSCRIPTION_ID_TO_CONTRACT_ADDRESS};
-use revm::primitives::{Address, U256, TxKind};
+use shrew_evm::tables::{
+    CONTRACT_ADDRESS_TO_INSCRIPTION_ID, INSCRIPTION_ID_TO_CONTRACT_ADDRESS,
+    EVM_ACCOUNTS, CODE_HASH_TO_BYTECODE,
+};
+use shrew_evm::ShrewPrecompiles;
+use crate::controller::{CONTROLLER_ADDRESS, controller_bytecode};
+use revm::primitives::{Address, Bytes, U256, B256, TxKind};
 use revm::primitives::hardfork::SpecId;
+use revm::state::{AccountInfo, Bytecode};
 use revm::context::result::{ExecutionResult, Output};
-use revm::context::{Context, TxEnv};
-use revm::{MainBuilder, ExecuteCommitEvm};
+use revm::context::{Context, TxEnv, BlockEnv, CfgEnv, Journal, FrameStack, Evm};
+use revm::handler::instructions::EthInstructions;
+use revm::handler::EthFrame;
+use revm::interpreter::interpreter::EthInterpreter;
+use revm::ExecuteCommitEvm;
 use bitcoin::Block;
 use metashrew_support::index_pointer::KeyValuePointer;
 use serde::Deserialize;
 use std::sync::Arc;
 
-type Ctx = Context<
-    revm::context::BlockEnv,
-    TxEnv,
-    revm::context::CfgEnv,
-    MetashrewDB,
-    revm::context::Journal<MetashrewDB>,
-    (),
->;
+type Ctx = Context<BlockEnv, TxEnv, CfgEnv, MetashrewDB, Journal<MetashrewDB>, ()>;
+type ShrewEvm = Evm<Ctx, (), EthInstructions<EthInterpreter, Ctx>, ShrewPrecompiles, EthFrame<EthInterpreter>>;
 
 /// BRC20-prog chain ID: 0x4252433230 ("BRC20" in ASCII)
 const BRC20_PROG_CHAIN_ID: u64 = 0x4252433230;
+
+/// Table key for tracking whether controller has been deployed
+const CONTROLLER_DEPLOYED_KEY: &str = "/prog/controller_deployed";
 
 #[derive(Debug, Deserialize)]
 struct ProgOperation {
@@ -62,7 +68,7 @@ fn get_evm_spec(height: u32) -> SpecId {
     }
 }
 
-fn make_tx(kind: TxKind, data: revm::primitives::Bytes, gas_limit: u64) -> TxEnv {
+fn make_tx(kind: TxKind, data: Bytes, gas_limit: u64) -> TxEnv {
     TxEnv {
         kind,
         data,
@@ -76,21 +82,23 @@ fn make_tx(kind: TxKind, data: revm::primitives::Bytes, gas_limit: u64) -> TxEnv
 
 pub struct ProgrammableBrc20Indexer {
     current_height: u32,
+    controller_deployed: bool,
 }
 
 impl ProgrammableBrc20Indexer {
     pub fn new() -> Self {
-        Self { current_height: 0 }
+        Self { current_height: 0, controller_deployed: false }
     }
 
-    fn build_ctx(&self) -> Ctx {
+    /// Build an EVM instance with custom BRC20-prog precompiles.
+    fn build_evm(&self, op_return_tx_id: B256) -> ShrewEvm {
         let spec = get_evm_spec(self.current_height);
         let mut ctx: Ctx = Context::new(MetashrewDB, spec);
 
         ctx.cfg.chain_id = BRC20_PROG_CHAIN_ID;
         ctx.cfg.limit_contract_code_size = Some(usize::MAX);
         ctx.cfg.disable_nonce_check = true;
-        ctx.cfg.disable_eip3607 = true;  // allow non-EOA callers
+        ctx.cfg.disable_eip3607 = true;
         ctx.cfg.disable_base_fee = true;
         ctx.cfg.disable_priority_fee_check = true;
 
@@ -99,11 +107,68 @@ impl ProgrammableBrc20Indexer {
         ctx.block.basefee = 0;
         ctx.block.difficulty = U256::ZERO;
 
-        ctx
+        let precompiles = ShrewPrecompiles::new(
+            spec.into(),
+            op_return_tx_id,
+            self.current_height,
+        );
+
+        Evm {
+            ctx,
+            inspector: (),
+            instruction: EthInstructions::new_mainnet_with_spec(spec.into()),
+            precompiles,
+            frame_stack: FrameStack::new_prealloc(8),
+        }
+    }
+
+    /// Deploy the BRC20 controller contract at its fixed address.
+    /// Called once on first block, sets account code directly in the database.
+    fn ensure_controller_deployed(&mut self) {
+        if self.controller_deployed { return; }
+
+        // Check persistent state
+        let mut deployed_marker = metashrew_core::index_pointer::IndexPointer::from_keyword(CONTROLLER_DEPLOYED_KEY);
+        if !deployed_marker.get().is_empty() {
+            self.controller_deployed = true;
+            return;
+        }
+
+        // Deploy the controller contract bytecode at the fixed address
+        let bytecode = controller_bytecode();
+        let code_hash = {
+            use sha2::{Sha256, Digest};
+            let mut hasher = Sha256::new();
+            hasher.update(&bytecode);
+            B256::from_slice(&hasher.finalize())
+        };
+
+        // Store bytecode
+        CODE_HASH_TO_BYTECODE.select(&code_hash.to_vec())
+            .set(Arc::new(bytecode.clone()));
+
+        // Store account info at controller address
+        let account_info = AccountInfo {
+            balance: U256::ZERO,
+            nonce: 1,
+            code_hash,
+            account_id: None,
+            code: Some(Bytecode::new_raw(Bytes::from(bytecode))),
+        };
+        let account_bytes = bincode::serialize(&account_info).expect("serialize account info");
+        EVM_ACCOUNTS.select(&CONTROLLER_ADDRESS.to_vec())
+            .set(Arc::new(account_bytes));
+
+        // Mark as deployed
+        deployed_marker.set(Arc::new(vec![1]));
+        self.controller_deployed = true;
     }
 
     pub fn index_block(&mut self, _block: &Block, height: u32) {
         self.current_height = height;
+
+        // Ensure controller contract is deployed
+        self.ensure_controller_deployed();
 
         let seq_bytes = GLOBAL_SEQUENCE_COUNTER.get();
         if seq_bytes.is_empty() { return; }
@@ -125,17 +190,17 @@ impl ProgrammableBrc20Indexer {
             if let Ok(op) = serde_json::from_slice::<ProgOperation>(&content_bytes) {
                 if op.p == "brc20-prog" {
                     match op.op.as_str() {
-                        "deploy" => {
+                        "deploy" | "d" => {
                             if let Ok(deploy) = serde_json::from_value::<DeployOp>(op.data) {
                                 self.execute_deploy(&entry, deploy);
                             }
                         }
-                        "call" => {
+                        "call" | "c" => {
                             if let Ok(call) = serde_json::from_value::<CallOp>(op.data) {
                                 self.execute_call(call);
                             }
                         }
-                        "transact" => {
+                        "transact" | "t" => {
                             if let Ok(transact) = serde_json::from_value::<TransactOp>(op.data) {
                                 self.execute_transact(transact);
                             }
@@ -148,10 +213,10 @@ impl ProgrammableBrc20Indexer {
     }
 
     fn execute_deploy(&mut self, entry: &InscriptionEntry, op: DeployOp) {
-        let data: revm::primitives::Bytes = hex::decode(op.d).unwrap_or_default().into();
+        let data: Bytes = hex::decode(op.d).unwrap_or_default().into();
         let gas_limit = (data.len() as u64 * BRC20_PROG_GAS_PER_BYTE).min(BRC20_PROG_MAX_CALL_GAS);
 
-        let mut evm = self.build_ctx().build_mainnet();
+        let mut evm = self.build_evm(B256::ZERO);
         let tx = make_tx(TxKind::Create, data, gas_limit);
 
         let result = evm.transact_commit(tx);
@@ -175,10 +240,10 @@ impl ProgrammableBrc20Indexer {
         if result.is_empty() { return; }
 
         let address = Address::from_slice(&result);
-        let data: revm::primitives::Bytes = hex::decode(op.d).unwrap_or_default().into();
+        let data: Bytes = hex::decode(op.d).unwrap_or_default().into();
         let gas_limit = (data.len() as u64 * BRC20_PROG_GAS_PER_BYTE).min(BRC20_PROG_MAX_CALL_GAS);
 
-        let mut evm = self.build_ctx().build_mainnet();
+        let mut evm = self.build_evm(B256::ZERO);
         let tx = make_tx(TxKind::Call(address), data, gas_limit);
 
         let _ = evm.transact_commit(tx);
@@ -189,12 +254,75 @@ impl ProgrammableBrc20Indexer {
         if to_bytes.len() != 20 { return; }
 
         let address = Address::from_slice(&to_bytes);
-        let data: revm::primitives::Bytes = hex::decode(op.d).unwrap_or_default().into();
+        let data: Bytes = hex::decode(op.d).unwrap_or_default().into();
         let gas_limit = (data.len() as u64 * BRC20_PROG_GAS_PER_BYTE).min(BRC20_PROG_MAX_CALL_GAS);
 
-        let mut evm = self.build_ctx().build_mainnet();
+        let mut evm = self.build_evm(B256::ZERO);
         let tx = make_tx(TxKind::Call(address), data, gas_limit);
 
+        let _ = evm.transact_commit(tx);
+    }
+
+    /// Call the controller's mint function to create EVM-side token representation.
+    /// Called when BRC20 tokens are deposited via BRC20-PROG OP_RETURN.
+    pub fn controller_mint(&mut self, ticker: &str, recipient: Address, amount: U256) {
+        use crate::controller::selectors;
+
+        // ABI-encode: mint(bytes ticker, address recipient, uint256 amount)
+        let ticker_bytes = ticker.as_bytes();
+        let mut calldata = Vec::new();
+        calldata.extend_from_slice(&selectors::MINT);
+        // offset to ticker bytes (0x60 = 96)
+        calldata.extend_from_slice(&[0u8; 31]);
+        calldata.push(0x60);
+        // recipient address (padded to 32 bytes)
+        calldata.extend_from_slice(&[0u8; 12]);
+        calldata.extend_from_slice(recipient.as_slice());
+        // amount
+        calldata.extend_from_slice(&amount.to_be_bytes::<32>());
+        // ticker length
+        let mut len_bytes = [0u8; 32];
+        len_bytes[31] = ticker_bytes.len() as u8;
+        calldata.extend_from_slice(&len_bytes);
+        // ticker data (padded)
+        let padded_len = (ticker_bytes.len() + 31) / 32 * 32;
+        let mut padded = vec![0u8; padded_len];
+        padded[..ticker_bytes.len()].copy_from_slice(ticker_bytes);
+        calldata.extend_from_slice(&padded);
+
+        let data: Bytes = calldata.into();
+        let gas_limit = BRC20_PROG_MAX_CALL_GAS;
+
+        let mut evm = self.build_evm(B256::ZERO);
+        let tx = make_tx(TxKind::Call(CONTROLLER_ADDRESS), data, gas_limit);
+        let _ = evm.transact_commit(tx);
+    }
+
+    /// Call the controller's burn function to destroy EVM-side token representation.
+    pub fn controller_burn(&mut self, ticker: &str, sender: Address, amount: U256) {
+        use crate::controller::selectors;
+
+        let ticker_bytes = ticker.as_bytes();
+        let mut calldata = Vec::new();
+        calldata.extend_from_slice(&selectors::BURN);
+        calldata.extend_from_slice(&[0u8; 31]);
+        calldata.push(0x60);
+        calldata.extend_from_slice(&[0u8; 12]);
+        calldata.extend_from_slice(sender.as_slice());
+        calldata.extend_from_slice(&amount.to_be_bytes::<32>());
+        let mut len_bytes = [0u8; 32];
+        len_bytes[31] = ticker_bytes.len() as u8;
+        calldata.extend_from_slice(&len_bytes);
+        let padded_len = (ticker_bytes.len() + 31) / 32 * 32;
+        let mut padded = vec![0u8; padded_len];
+        padded[..ticker_bytes.len()].copy_from_slice(ticker_bytes);
+        calldata.extend_from_slice(&padded);
+
+        let data: Bytes = calldata.into();
+        let gas_limit = BRC20_PROG_MAX_CALL_GAS;
+
+        let mut evm = self.build_evm(B256::ZERO);
+        let tx = make_tx(TxKind::Call(CONTROLLER_ADDRESS), data, gas_limit);
         let _ = evm.transact_commit(tx);
     }
 }
