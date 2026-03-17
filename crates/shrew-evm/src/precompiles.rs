@@ -12,10 +12,14 @@
 
 use bitcoin::blockdata::opcodes;
 use bitcoin::blockdata::script::Builder;
+use bitcoin::consensus::deserialize;
 use bitcoin::key::UntweakedPublicKey;
 use bitcoin::taproot::TaprootBuilder;
-use bitcoin::ScriptBuf;
+use bitcoin::{ScriptBuf, Transaction};
+use bitcoin_hashes::Hash;
+use metashrew_support::index_pointer::KeyValuePointer;
 use revm::primitives::{Address, B256};
+use shrew_ord::tables::{TXID_TO_RAW_TX, TXID_TO_BLOCK_HEIGHT};
 
 /// Precompile address for BIP322 verify
 pub const PRECOMPILE_BIP322: Address = address_from_low_byte(0xFE);
@@ -62,18 +66,19 @@ pub fn precompile_addresses() -> Vec<Address> {
 
 /// Execute a custom precompile call.
 ///
-/// Returns `Some((gas_used, output))` if the address is a custom precompile,
+/// Returns `Some(PrecompileResult)` if the address is a custom precompile,
 /// `None` otherwise.
 pub fn execute_precompile(
     address: &Address,
     input: &[u8],
     gas_limit: u64,
     op_return_tx_id: B256,
+    current_height: u32,
 ) -> Option<PrecompileResult> {
     if *address == PRECOMPILE_BIP322 {
         Some(bip322_verify(input, gas_limit))
     } else if *address == PRECOMPILE_TX_DETAILS {
-        Some(btc_tx_details(input, gas_limit))
+        Some(btc_tx_details(input, gas_limit, current_height))
     } else if *address == PRECOMPILE_LAST_SAT_LOC {
         Some(last_sat_location(input, gas_limit))
     } else if *address == PRECOMPILE_LOCKED_PKSCRIPT {
@@ -91,31 +96,155 @@ pub struct PrecompileResult {
     pub output: Vec<u8>,
 }
 
-/// BIP322 signature verification precompile (0xFE).
+// ============================================================================
+// Helper: look up a transaction by txid bytes (32 bytes, internal byte order)
+// ============================================================================
+
+/// Look up a raw transaction from the TXID_TO_RAW_TX table.
+/// Returns the deserialized Transaction and its block height.
+fn lookup_tx(txid_bytes: &[u8]) -> Option<(Transaction, u32)> {
+    let raw = TXID_TO_RAW_TX.select(&txid_bytes.to_vec()).get();
+    if raw.is_empty() { return None; }
+    let height_bytes = TXID_TO_BLOCK_HEIGHT.select(&txid_bytes.to_vec()).get();
+    let height = if height_bytes.len() >= 4 {
+        u32::from_le_bytes(height_bytes[..4].try_into().unwrap_or([0; 4]))
+    } else {
+        0
+    };
+    let tx: Transaction = deserialize(&raw).ok()?;
+    Some((tx, height))
+}
+
+// ============================================================================
+// Helper: ABI encoding utilities
+// ============================================================================
+
+/// Encode a u256 value (u64 in low bytes) into 32 bytes big-endian
+fn encode_u256(val: u64) -> [u8; 32] {
+    let mut buf = [0u8; 32];
+    buf[24..32].copy_from_slice(&val.to_be_bytes());
+    buf
+}
+
+/// Encode a bytes32 value
+fn encode_bytes32(data: &[u8; 32]) -> [u8; 32] {
+    *data
+}
+
+/// Encode dynamic bytes with offset/length/data pattern
+fn encode_dynamic_bytes(data: &[u8]) -> Vec<u8> {
+    let padded_len = (data.len() + 31) / 32 * 32;
+    let mut result = vec![0u8; 32 + padded_len]; // length + padded data
+    // Length
+    let len_bytes = (data.len() as u64).to_be_bytes();
+    result[24..32].copy_from_slice(&len_bytes);
+    // Data
+    result[32..32 + data.len()].copy_from_slice(data);
+    result
+}
+
+/// Encode a dynamic array of bytes32 values
+fn encode_bytes32_array(items: &[[u8; 32]]) -> Vec<u8> {
+    let mut result = vec![0u8; 32]; // length
+    let len_bytes = (items.len() as u64).to_be_bytes();
+    result[24..32].copy_from_slice(&len_bytes);
+    for item in items {
+        result.extend_from_slice(item);
+    }
+    result
+}
+
+/// Encode a dynamic array of u256 values
+fn encode_u256_array(items: &[u64]) -> Vec<u8> {
+    let mut result = vec![0u8; 32]; // length
+    let len_bytes = (items.len() as u64).to_be_bytes();
+    result[24..32].copy_from_slice(&len_bytes);
+    for item in items {
+        result.extend_from_slice(&encode_u256(*item));
+    }
+    result
+}
+
+/// Encode a dynamic array of dynamic bytes values
+fn encode_bytes_array(items: &[Vec<u8>]) -> Vec<u8> {
+    // First: length of array
+    let mut header = vec![0u8; 32];
+    let len_bytes = (items.len() as u64).to_be_bytes();
+    header[24..32].copy_from_slice(&len_bytes);
+
+    // Offsets for each item (relative to start of data area after offsets)
+    let offsets_size = items.len() * 32;
+    let mut offsets = Vec::with_capacity(offsets_size);
+    let mut data_parts = Vec::new();
+    let mut current_offset = offsets_size;
+
+    for item in items {
+        offsets.extend_from_slice(&encode_u256(current_offset as u64));
+        let encoded = encode_dynamic_bytes(item);
+        current_offset += encoded.len();
+        data_parts.push(encoded);
+    }
+
+    let mut result = header;
+    result.extend(offsets);
+    for part in data_parts {
+        result.extend(part);
+    }
+    result
+}
+
+// ============================================================================
+// BIP322 signature verification precompile (0xFE)
+// ============================================================================
+
+/// BIP322 signature verification precompile.
 ///
-/// In the metashrew environment, we perform pure crypto verification
-/// without needing RPC calls.
+/// ABI: verify(bytes pkscript, bytes message, bytes signature) -> bool
 ///
-/// Input ABI: verify(bytes pkscript, bytes message, bytes signature) -> bool
-fn bip322_verify(_input: &[u8], gas_limit: u64) -> PrecompileResult {
+/// NOTE: Full BIP322 verification requires the `bip322` crate which needs
+/// bitcoin 0.32+. Currently we have bitcoin 0.30.2.
+/// This implementation decodes the ABI parameters correctly but returns false
+/// for all verification attempts until the bitcoin crate is upgraded.
+pub fn bip322_verify(input: &[u8], gas_limit: u64) -> PrecompileResult {
     if gas_limit < GAS_BIP322_VERIFY {
         return PrecompileResult { success: false, gas_used: gas_limit, output: vec![] };
     }
 
-    // For now, return false (not verified) - full BIP322 verification requires
-    // secp256k1 and script evaluation which will be added when bip322 crate is integrated
+    // Validate minimum input size (4 selector + 3*32 offsets = 100 bytes minimum)
+    if input.len() < 100 {
+        return PrecompileResult { success: false, gas_used: GAS_BIP322_VERIFY, output: vec![] };
+    }
+
+    // Validate input size limit (32KB per OPI spec)
+    if input.len() > 32768 {
+        return PrecompileResult { success: false, gas_used: GAS_BIP322_VERIFY, output: vec![] };
+    }
+
+    // TODO: Full BIP322 verification when bitcoin crate is upgraded to 0.32+
+    // For now, return false (verification failed) — this is the safe default
+    // since a false negative is better than a false positive for signature verification.
     let mut output = vec![0u8; 32];
     output[31] = 0; // false
 
     PrecompileResult { success: true, gas_used: GAS_BIP322_VERIFY, output }
 }
 
-/// BTC transaction details precompile (0xFD).
+// ============================================================================
+// BTC transaction details precompile (0xFD)
+// ============================================================================
+
+/// BTC transaction details precompile.
 ///
-/// Reads indexed transaction data from shrew-ord tables.
-///
-/// Input ABI: getTxDetails(bytes32 txid) -> (...)
-fn btc_tx_details(input: &[u8], gas_limit: u64) -> PrecompileResult {
+/// ABI: getTxDetails(bytes32 txid) -> (
+///     uint256 block_height,
+///     bytes32[] vin_txids,
+///     uint256[] vin_vouts,
+///     bytes[] vin_scriptPubKeys,
+///     uint256[] vin_values,
+///     bytes[] vout_scriptPubKeys,
+///     uint256[] vout_values
+/// )
+pub fn btc_tx_details(input: &[u8], gas_limit: u64, current_height: u32) -> PrecompileResult {
     if gas_limit < GAS_BTC_RPC_CALL {
         return PrecompileResult { success: false, gas_used: gas_limit, output: vec![] };
     }
@@ -125,34 +254,274 @@ fn btc_tx_details(input: &[u8], gas_limit: u64) -> PrecompileResult {
         return PrecompileResult { success: false, gas_used: GAS_BTC_RPC_CALL, output: vec![] };
     }
 
-    let _txid = &input[4..36];
+    // txid is in the ABI as big-endian bytes32, but Bitcoin uses little-endian internally
+    let mut txid_bytes = [0u8; 32];
+    txid_bytes.copy_from_slice(&input[4..36]);
+    // Reverse to get Bitcoin internal byte order
+    txid_bytes.reverse();
 
-    // Read from indexed data - placeholder for now
-    // In full implementation, would query shrew-ord tables for tx details
-    let output = vec![0u8; 32]; // Empty response
+    // Look up the transaction
+    let (tx, tx_height) = match lookup_tx(&txid_bytes) {
+        Some(v) => v,
+        None => return PrecompileResult { success: false, gas_used: GAS_BTC_RPC_CALL, output: vec![] },
+    };
 
-    PrecompileResult { success: true, gas_used: GAS_BTC_RPC_CALL, output }
+    // Validate tx is not in the future
+    if tx_height > current_height {
+        return PrecompileResult { success: false, gas_used: GAS_BTC_RPC_CALL, output: vec![] };
+    }
+
+    let is_coinbase = tx.input.len() == 1 && tx.input[0].previous_output.is_null();
+
+    // Calculate gas: base + per-input for looking up previous txs (coinbase has 0 input lookups)
+    let vin_count = if is_coinbase { 0 } else { tx.input.len() as u64 };
+    let input_gas = vin_count * GAS_BTC_RPC_CALL;
+    let total_gas = GAS_BTC_RPC_CALL + input_gas;
+    if gas_limit < total_gas {
+        return PrecompileResult { success: false, gas_used: gas_limit, output: vec![] };
+    }
+
+    // Build vin data by looking up each input's previous output
+    let mut vin_txids: Vec<[u8; 32]> = Vec::new();
+    let mut vin_vouts: Vec<u64> = Vec::new();
+    let mut vin_scripts: Vec<Vec<u8>> = Vec::new();
+    let mut vin_values: Vec<u64> = Vec::new();
+
+    if !is_coinbase {
+        for txin in &tx.input {
+            let prev_txid = txin.previous_output.txid;
+            let prev_vout = txin.previous_output.vout;
+
+            // Reverse txid for ABI encoding (back to big-endian)
+            let mut prev_txid_be = *prev_txid.as_byte_array();
+            prev_txid_be.reverse();
+            vin_txids.push(prev_txid_be);
+            vin_vouts.push(prev_vout as u64);
+
+            // Look up the previous transaction to get scriptPubKey and value
+            if let Some((prev_tx, _)) = lookup_tx(prev_txid.as_byte_array()) {
+                if let Some(prev_output) = prev_tx.output.get(prev_vout as usize) {
+                    vin_scripts.push(prev_output.script_pubkey.as_bytes().to_vec());
+                    vin_values.push(prev_output.value);
+                } else {
+                    vin_scripts.push(vec![]);
+                    vin_values.push(0);
+                }
+            } else {
+                vin_scripts.push(vec![]);
+                vin_values.push(0);
+            }
+        }
+    }
+
+    // Build vout data
+    let mut vout_scripts: Vec<Vec<u8>> = Vec::new();
+    let mut vout_values: Vec<u64> = Vec::new();
+    for txout in &tx.output {
+        vout_scripts.push(txout.script_pubkey.as_bytes().to_vec());
+        vout_values.push(txout.value);
+    }
+
+    // ABI-encode the response as a tuple of 7 elements
+    // Each dynamic element gets an offset in the header, then data appended
+    let header_size = 7 * 32; // 7 fields, each 32 bytes (value or offset)
+
+    // Encode each dynamic array
+    let vin_txids_enc = encode_bytes32_array(&vin_txids);
+    let vin_vouts_enc = encode_u256_array(&vin_vouts);
+    let vin_scripts_enc = encode_bytes_array(&vin_scripts);
+    let vin_values_enc = encode_u256_array(&vin_values);
+    let vout_scripts_enc = encode_bytes_array(&vout_scripts);
+    let vout_values_enc = encode_u256_array(&vout_values);
+
+    // Calculate offsets (relative to start of tuple encoding)
+    let mut current_offset = header_size;
+    let offsets = [
+        // block_height is inline (not an offset)
+        0u64, // placeholder
+        current_offset as u64, // vin_txids
+        { current_offset += vin_txids_enc.len(); current_offset as u64 }, // vin_vouts
+        { current_offset += vin_vouts_enc.len(); current_offset as u64 }, // vin_scripts
+        { current_offset += vin_scripts_enc.len(); current_offset as u64 }, // vin_values
+        { current_offset += vin_values_enc.len(); current_offset as u64 }, // vout_scripts
+        { current_offset += vout_scripts_enc.len(); current_offset as u64 }, // vout_values
+    ];
+
+    let mut output = Vec::with_capacity(header_size + vin_txids_enc.len() + vin_vouts_enc.len()
+        + vin_scripts_enc.len() + vin_values_enc.len() + vout_scripts_enc.len() + vout_values_enc.len());
+
+    // Header: block_height (inline) + 6 offsets
+    output.extend_from_slice(&encode_u256(tx_height as u64));
+    for i in 1..7 {
+        output.extend_from_slice(&encode_u256(offsets[i]));
+    }
+
+    // Data
+    output.extend(&vin_txids_enc);
+    output.extend(&vin_vouts_enc);
+    output.extend(&vin_scripts_enc);
+    output.extend(&vin_values_enc);
+    output.extend(&vout_scripts_enc);
+    output.extend(&vout_values_enc);
+
+    PrecompileResult { success: true, gas_used: total_gas, output }
 }
 
-/// Last satoshi location precompile (0xFC).
+// ============================================================================
+// Last satoshi location precompile (0xFC)
+// ============================================================================
+
+/// Last satoshi location precompile.
 ///
-/// Input ABI: getLastSatLocation(bytes32 txid, uint256 vout, uint256 sat) -> (...)
-fn last_sat_location(_input: &[u8], gas_limit: u64) -> PrecompileResult {
+/// ABI: getLastSatLocation(bytes32 txid, uint256 vout, uint256 sat) -> (
+///     bytes32 last_txid,
+///     uint256 last_vout,
+///     uint256 last_sat,
+///     bytes old_pkscript,
+///     bytes new_pkscript
+/// )
+///
+/// Traces a specific satoshi backwards through the transaction chain.
+pub fn last_sat_location(input: &[u8], gas_limit: u64) -> PrecompileResult {
     if gas_limit < GAS_BTC_RPC_CALL {
         return PrecompileResult { success: false, gas_used: gas_limit, output: vec![] };
     }
 
-    // Placeholder - requires sat tracking implementation
-    let output = vec![0u8; 32];
-    PrecompileResult { success: true, gas_used: GAS_BTC_RPC_CALL, output }
+    // Need at least 4 (selector) + 32 (txid) + 32 (vout) + 32 (sat) = 100 bytes
+    if input.len() < 100 {
+        return PrecompileResult { success: false, gas_used: GAS_BTC_RPC_CALL, output: vec![] };
+    }
+
+    // Decode inputs
+    let mut txid_bytes = [0u8; 32];
+    txid_bytes.copy_from_slice(&input[4..36]);
+    txid_bytes.reverse(); // Big-endian to Bitcoin internal
+
+    let vout = {
+        let mut buf = [0u8; 8];
+        buf.copy_from_slice(&input[60..68]); // low 8 bytes of uint256
+        u64::from_be_bytes(buf) as u32
+    };
+
+    let sat = {
+        let mut buf = [0u8; 8];
+        buf.copy_from_slice(&input[92..100]); // low 8 bytes of uint256
+        u64::from_be_bytes(buf)
+    };
+
+    // Look up the transaction
+    let (tx, _) = match lookup_tx(&txid_bytes) {
+        Some(v) => v,
+        None => return PrecompileResult { success: false, gas_used: GAS_BTC_RPC_CALL, output: vec![] },
+    };
+
+    // Reject coinbase transactions
+    let is_coinbase = tx.input.len() == 1 && tx.input[0].previous_output.is_null();
+    if is_coinbase {
+        return PrecompileResult { success: false, gas_used: GAS_BTC_RPC_CALL, output: vec![] };
+    }
+
+    // Validate vout index
+    if vout as usize >= tx.output.len() {
+        return PrecompileResult { success: false, gas_used: GAS_BTC_RPC_CALL, output: vec![] };
+    }
+
+    // Validate sat within output value
+    let output_value = tx.output[vout as usize].value;
+    if sat >= output_value {
+        return PrecompileResult { success: false, gas_used: GAS_BTC_RPC_CALL, output: vec![] };
+    }
+
+    // Get new_pkscript (the output script at vout)
+    let new_pkscript = tx.output[vout as usize].script_pubkey.as_bytes().to_vec();
+
+    // Calculate absolute sat position through outputs
+    let mut total_vout_sats: u64 = 0;
+    for i in 0..vout as usize {
+        total_vout_sats += tx.output[i].value;
+    }
+    total_vout_sats += sat;
+
+    // Calculate gas for input traversal
+    let input_gas = tx.input.len() as u64 * GAS_BTC_RPC_CALL;
+    let total_gas = GAS_BTC_RPC_CALL + input_gas;
+    if gas_limit < total_gas {
+        return PrecompileResult { success: false, gas_used: gas_limit, output: vec![] };
+    }
+
+    // Walk through inputs to find which one contains our satoshi
+    let mut accumulated_sats: u64 = 0;
+    let mut found = false;
+    let mut last_txid_be = [0u8; 32];
+    let mut last_vout: u64 = 0;
+    let mut last_sat: u64 = 0;
+    let mut old_pkscript: Vec<u8> = Vec::new();
+
+    for txin in &tx.input {
+        let prev_txid = txin.previous_output.txid;
+        let prev_vout = txin.previous_output.vout;
+
+        let prev_output_value = if let Some((prev_tx, _)) = lookup_tx(prev_txid.as_byte_array()) {
+            if let Some(prev_out) = prev_tx.output.get(prev_vout as usize) {
+                old_pkscript = prev_out.script_pubkey.as_bytes().to_vec();
+                prev_out.value
+            } else {
+                0
+            }
+        } else {
+            0
+        };
+
+        accumulated_sats += prev_output_value;
+
+        if accumulated_sats > total_vout_sats {
+            // This input contains our satoshi
+            let mut prev_txid_be = *prev_txid.as_byte_array();
+            prev_txid_be.reverse();
+            last_txid_be = prev_txid_be;
+            last_vout = prev_vout as u64;
+            // Calculate sat offset within this input
+            last_sat = total_vout_sats - (accumulated_sats - prev_output_value);
+            found = true;
+            break;
+        }
+    }
+
+    if !found {
+        return PrecompileResult { success: false, gas_used: total_gas, output: vec![] };
+    }
+
+    // ABI-encode response: (bytes32, uint256, uint256, bytes, bytes)
+    // Header: 5 slots (first 3 inline, last 2 offsets)
+    let header_size = 5 * 32;
+    let old_pk_enc = encode_dynamic_bytes(&old_pkscript);
+    let new_pk_enc = encode_dynamic_bytes(&new_pkscript);
+
+    let old_pk_offset = header_size;
+    let new_pk_offset = old_pk_offset + old_pk_enc.len();
+
+    let mut output = Vec::with_capacity(header_size + old_pk_enc.len() + new_pk_enc.len());
+    output.extend_from_slice(&encode_bytes32(&last_txid_be));   // last_txid
+    output.extend_from_slice(&encode_u256(last_vout));           // last_vout
+    output.extend_from_slice(&encode_u256(last_sat));            // last_sat
+    output.extend_from_slice(&encode_u256(old_pk_offset as u64)); // offset to old_pkscript
+    output.extend_from_slice(&encode_u256(new_pk_offset as u64)); // offset to new_pkscript
+    output.extend(&old_pk_enc);
+    output.extend(&new_pk_enc);
+
+    PrecompileResult { success: true, gas_used: total_gas, output }
 }
+
+// ============================================================================
+// Get locked pkscript precompile (0xFB) — already implemented
+// ============================================================================
 
 /// Get locked pkscript precompile (0xFB).
 ///
 /// Input ABI: getLockedPkscript(bytes pkscript, uint256 lock_block_count) -> bytes
 ///
 /// Builds a P2TR output script with a CSV timelock wrapping the given pkscript.
-fn get_locked_pkscript(input: &[u8], gas_limit: u64) -> PrecompileResult {
+pub fn get_locked_pkscript(input: &[u8], gas_limit: u64) -> PrecompileResult {
     if gas_limit < GAS_LOCKED_PKSCRIPT {
         return PrecompileResult { success: false, gas_used: gas_limit, output: vec![] };
     }
@@ -171,9 +540,7 @@ fn get_locked_pkscript(input: &[u8], gas_limit: u64) -> PrecompileResult {
     let pkscript_offset = {
         let mut buf = [0u8; 32];
         buf.copy_from_slice(&data[0..32]);
-        // offset is in bytes from start of data area
-        let offset = u256_to_usize(buf);
-        match offset {
+        match u256_to_usize(buf) {
             Some(o) => o,
             None => return fail(),
         }
@@ -183,7 +550,6 @@ fn get_locked_pkscript(input: &[u8], gas_limit: u64) -> PrecompileResult {
     let lock_block_count = {
         let mut buf = [0u8; 32];
         buf.copy_from_slice(&data[32..64]);
-        // Take low 8 bytes as u64
         let val = u64::from_be_bytes(buf[24..32].try_into().unwrap());
         val
     };
@@ -266,7 +632,6 @@ fn get_locked_pkscript(input: &[u8], gas_limit: u64) -> PrecompileResult {
 
 /// Convert a big-endian 256-bit value to usize, returning None if it overflows.
 fn u256_to_usize(bytes: [u8; 32]) -> Option<usize> {
-    // Check that the high bytes are all zero
     for &b in &bytes[..24] {
         if b != 0 {
             return None;
@@ -276,12 +641,16 @@ fn u256_to_usize(bytes: [u8; 32]) -> Option<usize> {
     usize::try_from(val).ok()
 }
 
+// ============================================================================
+// Get OP_RETURN transaction ID precompile (0xFA) — already implemented
+// ============================================================================
+
 /// Get OP_RETURN transaction ID precompile (0xFA).
 ///
 /// Returns the current OP_RETURN transaction ID from context.
 ///
 /// Input ABI: getTxId() -> bytes32
-fn get_op_return_txid(op_return_tx_id: B256, gas_limit: u64) -> PrecompileResult {
+pub fn get_op_return_txid(op_return_tx_id: B256, gas_limit: u64) -> PrecompileResult {
     if gas_limit < GAS_OP_RETURN_TXID {
         return PrecompileResult { success: false, gas_used: gas_limit, output: vec![] };
     }

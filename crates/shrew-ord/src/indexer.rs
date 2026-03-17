@@ -2,6 +2,7 @@ use shrew_support::inscription::{Charm, InscriptionEntry, InscriptionId, Rarity,
 use crate::envelope::{parse_inscriptions_from_transaction, Envelope};
 use crate::tables::*;
 use bitcoin::{Block, OutPoint, Transaction, Txid, Network};
+use bitcoin::consensus::serialize;
 use bitcoin_hashes::Hash;
 use metashrew_support::index_pointer::KeyValuePointer;
 use std::collections::HashMap;
@@ -69,6 +70,14 @@ impl InscriptionIndexer {
 
         HEIGHT_TO_BLOCK_HASH.select(&height.to_le_bytes().to_vec()).set(Arc::new(self.block_hash.as_byte_array().to_vec()));
         BLOCK_HASH_TO_HEIGHT.select(&self.block_hash.as_byte_array().to_vec()).set(Arc::new(height.to_le_bytes().to_vec()));
+
+        // Index all transactions for BRC20-prog precompile lookups
+        for tx in &block.txdata {
+            let txid_bytes = tx.txid().as_byte_array().to_vec();
+            let raw_tx = serialize(tx);
+            TXID_TO_RAW_TX.select(&txid_bytes).set(Arc::new(raw_tx));
+            TXID_TO_BLOCK_HEIGHT.select(&txid_bytes).set(Arc::new(height.to_le_bytes().to_vec()));
+        }
 
         let mut result = BlockIndexResult::new(height, self.block_hash);
         let mut sat_ranges = SatRanges::new();
