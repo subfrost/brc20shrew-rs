@@ -1,3 +1,4 @@
+use wasm_bindgen_test::wasm_bindgen_test as test;
 use crate::tables::{SNS_NAME_TO_ID, SNS_NAMESPACE_TO_ID, SNS_HEIGHT_TO_NAMES};
 use shrew_test_helpers::state::clear;
 use shrew_test_helpers::indexing::{index_ord_block, index_sns_block};

@@ -1,3 +1,4 @@
+use wasm_bindgen_test::wasm_bindgen_test as test;
 use crate::envelope::{parse_inscriptions_from_transaction, Inscription};
 use bitcoin::{Transaction, TxIn, TxOut, OutPoint, Witness, ScriptBuf, Sequence, Txid};
 use shrew_test_helpers::inscriptions::*;

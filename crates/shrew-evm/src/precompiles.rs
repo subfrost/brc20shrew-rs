@@ -293,6 +293,7 @@ fn get_op_return_txid(op_return_tx_id: B256, gas_limit: u64) -> PrecompileResult
 #[cfg(test)]
 mod tests {
     use super::*;
+    use wasm_bindgen_test::wasm_bindgen_test as test;
 
     #[test]
     fn test_precompile_addresses() {

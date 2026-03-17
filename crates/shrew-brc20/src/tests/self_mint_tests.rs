@@ -6,6 +6,7 @@
 ///! - Height-gated validation
 ///! - Self-mint specific deploy/mint rules
 
+use wasm_bindgen_test::wasm_bindgen_test as test;
 use crate::brc20::{Brc20Indexer, Brc20Operation, Ticker, MAX_AMOUNT};
 use crate::tables::Brc20Tickers;
 use shrew_test_helpers::state::clear;

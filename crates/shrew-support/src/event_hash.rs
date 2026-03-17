@@ -54,6 +54,7 @@ impl Default for EventHasher {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use wasm_bindgen_test::wasm_bindgen_test as test;
 
     #[test]
     fn test_event_hasher_deterministic() {

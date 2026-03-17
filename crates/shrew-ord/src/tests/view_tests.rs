@@ -1,3 +1,4 @@
+use wasm_bindgen_test::wasm_bindgen_test as test;
 use crate::proto::{
     get_block_info_request, get_inscription_request, GetBlockHashRequest, GetBlockInfoRequest,
     GetChildrenRequest, GetContentRequest, GetInscriptionRequest, GetInscriptionsRequest,

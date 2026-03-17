@@ -8,6 +8,7 @@ pub fn get_address_from_txout(tx_out: &TxOut, network: Network) -> Option<Addres
 #[cfg(test)]
 mod tests {
     use super::*;
+    use wasm_bindgen_test::wasm_bindgen_test as test;
     use bitcoin::{TxOut, ScriptBuf, Network};
 
     #[test]

@@ -1,3 +1,4 @@
+use wasm_bindgen_test::wasm_bindgen_test as test;
 use crate::brc20::{Brc20Indexer, Brc20Operation, TransferInfo};
 use crate::tables::{Brc20Tickers, Brc20Balances};
 use shrew_test_helpers::state::clear;

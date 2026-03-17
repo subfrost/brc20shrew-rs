@@ -333,6 +333,7 @@ impl fmt::Display for Media {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use wasm_bindgen_test::wasm_bindgen_test as test;
     use bitcoin::Txid;
     use std::str::FromStr;
 

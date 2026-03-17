@@ -1,3 +1,4 @@
+use wasm_bindgen_test::wasm_bindgen_test as test;
 use crate::proto::{
     get_inscription_request, GetBlockHashRequest, GetContentRequest, GetInscriptionRequest,
     GetInscriptionsRequest, InscriptionId as ProtoInscriptionId, PaginationRequest,

@@ -37,6 +37,7 @@ pub const NETWORK: bitcoin::Network = bitcoin::Network::Bitcoin;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use wasm_bindgen_test::wasm_bindgen_test as test;
 
     #[test]
     fn test_jubilee_height_value() {

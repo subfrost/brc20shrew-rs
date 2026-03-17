@@ -1,5 +1,6 @@
 ///! Controller bytecode and selector tests.
 
+use wasm_bindgen_test::wasm_bindgen_test as test;
 use crate::controller;
 
 #[test]

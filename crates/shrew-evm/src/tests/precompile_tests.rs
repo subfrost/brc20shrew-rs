@@ -1,3 +1,4 @@
+use wasm_bindgen_test::wasm_bindgen_test as test;
 use crate::precompiles::*;
 use revm::primitives::{Address, B256};
 

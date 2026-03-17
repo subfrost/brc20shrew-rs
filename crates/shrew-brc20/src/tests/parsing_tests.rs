@@ -1,3 +1,4 @@
+use wasm_bindgen_test::wasm_bindgen_test as test;
 use crate::brc20::{Brc20Indexer, Brc20Operation};
 
 /// Helper to create BRC20 JSON content bytes

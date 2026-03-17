@@ -1,3 +1,4 @@
+use wasm_bindgen_test::wasm_bindgen_test as test;
 use crate::tables::{POW20_TICKERS, POW20_BALANCES};
 use crate::pow20_indexer::{Pow20Ticker, Pow20Balance};
 use shrew_test_helpers::state::clear;

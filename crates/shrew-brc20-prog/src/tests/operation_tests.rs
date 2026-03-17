@@ -1,3 +1,4 @@
+use wasm_bindgen_test::wasm_bindgen_test as test;
 use crate::prog_indexer::ProgrammableBrc20Indexer;
 use shrew_test_helpers::state::clear;
 use shrew_test_helpers::blocks::{create_coinbase_transaction, create_block_with_txs};

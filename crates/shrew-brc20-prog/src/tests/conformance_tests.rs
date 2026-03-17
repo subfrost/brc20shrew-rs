@@ -3,6 +3,7 @@
 ///! These test the prog indexer against known correctness requirements from the
 ///! OPI reference implementation.
 
+use wasm_bindgen_test::wasm_bindgen_test as test;
 use crate::prog_indexer::ProgrammableBrc20Indexer;
 use crate::view;
 use crate::proto::CallRequest;

@@ -6,6 +6,7 @@
 ///!
 ///! After the u64->u128 type migration, amount assertions will be updated.
 
+use wasm_bindgen_test::wasm_bindgen_test as test;
 use crate::brc20::{Brc20Indexer, Brc20Operation, Ticker, Balance};
 use crate::tables::{Brc20Tickers, Brc20Balances, Brc20TransferableInscriptions};
 use shrew_test_helpers::state::clear;

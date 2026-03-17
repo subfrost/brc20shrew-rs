@@ -316,6 +316,7 @@ fn check_leading_zero_bits(hash: &[u8], difficulty: u32) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use wasm_bindgen_test::wasm_bindgen_test as test;
 
     #[test]
     fn test_leading_zero_bits() {

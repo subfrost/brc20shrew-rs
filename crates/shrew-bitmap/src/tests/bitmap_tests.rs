@@ -1,3 +1,4 @@
+use wasm_bindgen_test::wasm_bindgen_test as test;
 use crate::tables::{BITMAP_NUMBER_TO_ID, BITMAP_ID_TO_NUMBER, BITMAP_HEIGHT_TO_ENTRIES};
 use shrew_test_helpers::state::clear;
 use shrew_test_helpers::indexing::{index_ord_block, index_bitmap_block};

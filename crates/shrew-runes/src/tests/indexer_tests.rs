@@ -1,3 +1,4 @@
+use wasm_bindgen_test::wasm_bindgen_test as test;
 use crate::balance_sheet::{BalanceSheet, RuneId};
 use crate::rune_indexer::{RuneEntry, RuneEvent};
 use crate::tables::*;

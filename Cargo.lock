@@ -3146,6 +3146,7 @@ dependencies = [
  "shrew-test-helpers",
  "thiserror 1.0.69",
  "wasm-bindgen",
+ "wasm-bindgen-test",
 ]
 
 [[package]]
@@ -3228,6 +3229,7 @@ dependencies = [
  "shrew-support",
  "shrew-test-helpers",
  "thiserror 1.0.69",
+ "wasm-bindgen-test",
 ]
 
 [[package]]
@@ -3279,6 +3281,7 @@ dependencies = [
  "shrew-test-helpers",
  "thiserror 1.0.69",
  "wasm-bindgen",
+ "wasm-bindgen-test",
 ]
 
 [[package]]
@@ -3332,6 +3335,7 @@ dependencies = [
  "shrew-test-helpers",
  "thiserror 1.0.69",
  "wasm-bindgen",
+ "wasm-bindgen-test",
 ]
 
 [[package]]
@@ -3347,6 +3351,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "thiserror 1.0.69",
+ "wasm-bindgen-test",
 ]
 
 [[package]]

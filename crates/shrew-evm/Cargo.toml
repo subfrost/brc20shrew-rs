@@ -30,3 +30,4 @@ metashrew-support = { workspace = true }
 [dev-dependencies]
 metashrew-core = { git = "https://github.com/sandshrewmetaprotocols/metashrew", features = ["test-utils"], branch = "sandshrewmetadev/v9.1.0", default-features = false }
 shrew-test-helpers = { workspace = true }
+wasm-bindgen-test = { workspace = true }

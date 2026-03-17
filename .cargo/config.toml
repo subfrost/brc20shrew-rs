@@ -2,7 +2,7 @@
 target = "wasm32-unknown-unknown"
 
 [target.wasm32-unknown-unknown]
-runner = "wasm-bindgen-test-runner"
+runner = "/home/ubuntu/sublake/submodules/brc20shrew-rs/wasm-test-runner.sh"
 rustflags = ["--cfg=getrandom_js"]
 
 [env]

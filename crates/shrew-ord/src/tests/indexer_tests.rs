@@ -1,3 +1,4 @@
+use wasm_bindgen_test::wasm_bindgen_test as test;
 use crate::indexer::InscriptionIndexer;
 use crate::tables::*;
 use bitcoin_hashes::Hash;
