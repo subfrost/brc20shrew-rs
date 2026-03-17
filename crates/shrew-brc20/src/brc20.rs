@@ -239,9 +239,14 @@ impl Brc20Indexer {
     /// - Integer amounts: "1000" -> 1000 * 10^18
     /// - Decimal amounts: "1000.5" -> 1000.5 * 10^18
     /// - Rejects negative, leading dot, trailing dot, multiple dots
-    /// - Rejects amounts with more than 18 decimal places
+    /// - Rejects amounts with more decimal places than `ticker_decimals`
     /// - Rejects amounts exceeding MAX_AMOUNT
-    fn parse_amount(s: &str) -> Option<u128> {
+    ///
+    /// `ticker_decimals`: maximum allowed decimal places (0-18).
+    /// For deploy parsing where `dec` is known, pass the deploy's dec.
+    /// For mint/transfer where ticker decimals must be looked up, use 18
+    /// and re-validate in process_operation.
+    pub fn parse_amount(s: &str, ticker_decimals: u8) -> Option<u128> {
         // Must be a valid positive decimal number
         if s.is_empty() { return None; }
 
@@ -264,9 +269,10 @@ impl Brc20Indexer {
             let integer_part = &s[..dot_index];
             let decimal_part = &s[dot_index + 1..];
 
-            if decimal_part.len() > 18 { return None; }
+            // Reject if decimal places exceed ticker's allowed decimals
+            if decimal_part.len() > ticker_decimals as usize { return None; }
 
-            // Build the scaled integer: integer_part + decimal_part + padding zeros
+            // Build the scaled integer: integer_part + decimal_part + padding zeros to 18
             let mut combined = String::new();
             combined.push_str(integer_part);
             combined.push_str(decimal_part);
@@ -280,14 +286,18 @@ impl Brc20Indexer {
             result = integer_val.checked_mul(FIXED_POINT_SCALE)?;
         }
 
-        // Reject zero
-        // Note: zero rejection is handled by callers for mint/transfer,
-        // but deploy max_supply=0 has special handling. Return the value.
-
         // Reject amounts exceeding MAX_AMOUNT
         if result > MAX_AMOUNT { return None; }
 
         Some(result)
+    }
+
+    /// Count decimal places in an amount string. Returns 0 for integers.
+    fn decimal_places(s: &str) -> usize {
+        match s.find('.') {
+            Some(dot_index) => s.len() - dot_index - 1,
+            None => 0,
+        }
     }
 
     /// Check if a string contains only alphanumeric characters or dashes.
@@ -359,7 +369,17 @@ impl Brc20Indexer {
                     if self_mint_val != Some("true") { return None; }
                 }
 
-                let max_supply_raw = Self::parse_amount(json.get("max")?.as_str()?)?;
+                // Parse decimals FIRST — needed for validating max/lim precision
+                let decimals = json.get("dec")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| s.parse::<u8>().ok())
+                    .unwrap_or(18);
+
+                // Decimals must be <= 18
+                if decimals > 18 { return None; }
+
+                // Validate max/lim amounts against the ticker's decimal precision
+                let max_supply_raw = Self::parse_amount(json.get("max")?.as_str()?, decimals)?;
 
                 // For self-mint: max_supply of 0 defaults to MAX_AMOUNT
                 let max_supply = if is_self_mint && max_supply_raw == 0 {
@@ -372,7 +392,7 @@ impl Brc20Indexer {
                 // lim defaults to max_supply when absent (OPI behavior)
                 let limit_per_mint = if let Some(lim_val) = json.get("lim") {
                     let lim_str = lim_val.as_str()?;
-                    let lim = Self::parse_amount(lim_str)?;
+                    let lim = Self::parse_amount(lim_str, decimals)?;
                     // For self-mint: lim of 0 defaults to MAX_AMOUNT
                     if is_self_mint && lim == 0 {
                         MAX_AMOUNT
@@ -384,24 +404,28 @@ impl Brc20Indexer {
                     max_supply
                 };
 
-                let decimals = json.get("dec")
-                    .and_then(|v| v.as_str())
-                    .and_then(|s| s.parse::<u8>().ok())
-                    .unwrap_or(18);
-
-                // Decimals must be <= 18
-                if decimals > 18 { return None; }
-
                 Some(Brc20Operation::Deploy { ticker, max_supply, limit_per_mint, decimals, self_mint: is_self_mint })
             }
             "mint" => {
-                let amount = Self::parse_amount(json.get("amt")?.as_str()?)?;
-                if amount == 0 { return None; } // reject zero mint
+                let amt_str = json.get("amt")?.as_str()?;
+                // Look up ticker's decimals for precision validation
+                let ticker_decimals = Brc20Tickers::new().get(&ticker)
+                    .and_then(|d| serde_json::from_slice::<Ticker>(&d).ok())
+                    .map(|t| t.decimals)
+                    .unwrap_or(18); // If ticker not deployed yet, allow max (will fail later anyway)
+                let amount = Self::parse_amount(amt_str, ticker_decimals)?;
+                if amount == 0 { return None; }
                 Some(Brc20Operation::Mint { ticker, amount })
             }
             "transfer" => {
-                let amount = Self::parse_amount(json.get("amt")?.as_str()?)?;
-                if amount == 0 { return None; } // reject zero transfer
+                let amt_str = json.get("amt")?.as_str()?;
+                // Look up ticker's decimals for precision validation
+                let ticker_decimals = Brc20Tickers::new().get(&ticker)
+                    .and_then(|d| serde_json::from_slice::<Ticker>(&d).ok())
+                    .map(|t| t.decimals)
+                    .unwrap_or(18);
+                let amount = Self::parse_amount(amt_str, ticker_decimals)?;
+                if amount == 0 { return None; }
                 Some(Brc20Operation::Transfer { ticker, amount })
             }
             _ => None,

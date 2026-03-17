@@ -6,3 +6,4 @@ mod self_mint_tests;
 mod extended_conformance_tests;
 mod transfer_destination_tests;
 mod integration_tests;
+mod decimal_precision_tests;
