@@ -101,15 +101,25 @@ impl Brc20Indexer {
     pub fn new() -> Self { Self }
 
     /// Process an entire block for BRC20 operations.
+    /// OPI ordering: inscriptions first, then transfers (spending).
     pub fn process_block(&self, block: &Block, height: u32) {
         let network = Network::Bitcoin;
         for tx in &block.txdata {
-            // Check for BRC20 transfer claims (spending transferable inscriptions)
-            self.process_brc20_transfers(tx, network);
-
-            // Check for new BRC20 operations in inscriptions
+            // Process inscriptions FIRST (deploy/mint/transfer-inscribe)
             self.process_brc20_inscriptions(tx, network, height);
+
+            // Then process transfer claims (spending transferable inscriptions)
+            self.process_brc20_transfers(tx, network, height);
         }
+    }
+
+    /// Validate content-type per OPI rules:
+    /// - Must be exactly "text/plain" or start with "text/plain;"
+    /// - Must be exactly "application/json" or start with "application/json;"
+    /// - Rejects "application/json2", "text/plaintext", etc.
+    pub fn is_valid_brc20_content_type(ct: &str) -> bool {
+        ct == "text/plain" || ct.starts_with("text/plain;")
+            || ct == "application/json" || ct.starts_with("application/json;")
     }
 
     fn process_brc20_inscriptions(&self, tx: &Transaction, network: Network, height: u32) {
@@ -126,8 +136,12 @@ impl Brc20Indexer {
                 Err(_) => continue,
             };
 
+            // Skip cursed inscriptions (OPI: cursed_for_brc20 check)
+            if entry.number < 0 { continue; }
+
+            // Validate content-type strictly per OPI rules
             let _content_type = match &entry.content_type {
-                Some(ct) if ct.starts_with("text/plain") || ct.starts_with("application/json") => ct.clone(),
+                Some(ct) if Self::is_valid_brc20_content_type(ct) => ct.clone(),
                 _ => continue,
             };
 
@@ -165,7 +179,14 @@ impl Brc20Indexer {
         }
     }
 
-    fn process_brc20_transfers(&self, tx: &Transaction, network: Network) {
+    fn process_brc20_transfers(&self, tx: &Transaction, network: Network, height: u32) {
+        // Check if inscription was spent as fee:
+        // An inscription is "sent as fee" when the total output value is less than
+        // the total input value and the inscription's output index doesn't exist.
+        // For simplicity, we detect this when there are no outputs or the inscription
+        // has no corresponding output.
+        let has_outputs = !tx.output.is_empty();
+
         for input in &tx.input {
             let outpoint_bytes = input.previous_output.txid.as_byte_array()
                 .iter().chain(input.previous_output.vout.to_le_bytes().iter()).copied().collect::<Vec<u8>>();
@@ -177,15 +198,35 @@ impl Brc20Indexer {
                 if entry_bytes.is_empty() { continue; }
                 if let Ok(entry) = InscriptionEntry::from_bytes(&entry_bytes) {
                     let inscription_id_str = entry.id.to_string();
-                    if let Some(transfer_info_bytes) = Brc20TransferableInscriptions::new().get(&inscription_id_str) {
-                        if let Ok(transfer_info) = serde_json::from_slice::<TransferInfo>(&transfer_info_bytes) {
-                            if let Some(first_output) = tx.output.get(0) {
-                                if let Some(new_owner) = get_address_from_txout(first_output, network) {
-                                    let _ = self.claim_transfer(&new_owner.to_string(), &transfer_info);
-                                    Brc20TransferableInscriptions::new().delete(&inscription_id_str);
-                                }
-                            }
-                        }
+
+                    // Double-claim prevention: check if inscription is still transferable
+                    let transfer_info_bytes = match Brc20TransferableInscriptions::new().get(&inscription_id_str) {
+                        Some(data) => data,
+                        None => continue, // Already claimed or never existed
+                    };
+                    let transfer_info = match serde_json::from_slice::<TransferInfo>(&transfer_info_bytes) {
+                        Ok(info) => info,
+                        Err(_) => continue,
+                    };
+
+                    // Delete transferable inscription FIRST to prevent double-claim
+                    Brc20TransferableInscriptions::new().delete(&inscription_id_str);
+
+                    if !has_outputs {
+                        // No outputs at all — sent as fee
+                        let _ = self.resolve_transfer(TransferDestination::SentAsFee, &transfer_info, height);
+                        continue;
+                    }
+
+                    if let Some(first_output) = tx.output.get(0) {
+                        let pkscript_hex = hex::encode(first_output.script_pubkey.as_bytes());
+
+                        // Classify destination from the output pkscript
+                        let destination = Self::classify_destination(&pkscript_hex, false);
+                        let _ = self.resolve_transfer(destination, &transfer_info, height);
+                    } else {
+                        // No first output (shouldn't happen if has_outputs, but handle gracefully)
+                        let _ = self.resolve_transfer(TransferDestination::SentAsFee, &transfer_info, height);
                     }
                 }
             }
