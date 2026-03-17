@@ -20,6 +20,28 @@ pub const MAX_AMOUNT: u128 = (u64::MAX as u128) * 1_000_000_000_000_000_000u128;
 /// Fixed-point scale factor: all amounts are stored as value * 10^18
 const FIXED_POINT_SCALE: u128 = 1_000_000_000_000_000_000u128; // 10^18
 
+/// OP_RETURN pkscript prefix (bare OP_RETURN = 0x6a)
+pub const OP_RETURN_PKSCRIPT: &str = "6a";
+
+/// BRC20-PROG OP_RETURN pkscript: OP_RETURN OP_PUSH9 "BRC20PROG"
+pub const BRC20_PROG_OP_RETURN_PKSCRIPT: &str = "6a09425243323050524f47";
+
+/// BRC20-prog phase 2 (all tickers) — not yet finalized on mainnet
+pub const BRC20_PROG_ALL_TICKERS_HEIGHT: u32 = 9999999;
+
+/// Transfer destination type — determines how a transfer-transfer is resolved
+#[derive(Debug, Clone, PartialEq)]
+pub enum TransferDestination {
+    /// Normal wallet-to-wallet transfer
+    Wallet(String),
+    /// OP_RETURN output — tokens are burned
+    Burn,
+    /// BRC20-PROG OP_RETURN — tokens deposited to programmable module
+    Brc20ProgDeposit,
+    /// Inscription spent as fee — tokens returned to sender
+    SentAsFee,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Brc20Operation {
     Deploy {
@@ -49,6 +71,8 @@ pub struct Ticker {
     pub deploy_inscription_id: String,
     #[serde(default)]
     pub is_self_mint: bool,
+    #[serde(default)]
+    pub burned_supply: u128,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -355,6 +379,7 @@ impl Brc20Indexer {
                     limit_per_mint: *limit_per_mint, decimals: *decimals,
                     deploy_inscription_id: inscription_id.to_string(),
                     is_self_mint: *self_mint,
+                    burned_supply: 0,
                 };
                 tickers_table.set(&ticker, &serde_json::to_vec(&new_ticker)?);
             }
@@ -406,19 +431,120 @@ impl Brc20Indexer {
         Ok(())
     }
 
+    /// Claim a transfer — simple wallet-to-wallet (backwards-compatible).
     pub fn claim_transfer(&self, new_owner: &str, transfer_info: &TransferInfo) -> Result<()> {
+        self.resolve_transfer(TransferDestination::Wallet(new_owner.to_string()), transfer_info, 0)
+    }
+
+    /// Resolve a transfer based on destination type (OPI-compatible).
+    ///
+    /// Handles four cases per OPI reference:
+    /// - Wallet: normal transfer to recipient
+    /// - Burn: OP_RETURN output, tokens destroyed
+    /// - Brc20ProgDeposit: BRC20-PROG OP_RETURN, tokens deposited to prog module
+    /// - SentAsFee: inscription spent as tx fee, tokens returned to sender
+    pub fn resolve_transfer(&self, destination: TransferDestination, transfer_info: &TransferInfo, height: u32) -> Result<()> {
         let balances_table = Brc20Balances::new();
-        let mut new_owner_balance = balances_table.get(new_owner, &transfer_info.ticker)
-            .and_then(|d| serde_json::from_slice(&d).ok())
-            .unwrap_or_else(|| Balance::new(transfer_info.ticker.clone()));
-        new_owner_balance.total_balance += transfer_info.amount;
-        new_owner_balance.available_balance += transfer_info.amount;
-        balances_table.set(new_owner, &transfer_info.ticker, &serde_json::to_vec(&new_owner_balance)?);
-        if let Some(sender_balance_data) = balances_table.get(&transfer_info.sender, &transfer_info.ticker) {
-            let mut sender_balance: Balance = serde_json::from_slice(&sender_balance_data)?;
-            sender_balance.total_balance -= transfer_info.amount;
-            balances_table.set(&transfer_info.sender, &transfer_info.ticker, &serde_json::to_vec(&sender_balance)?);
+        let tickers_table = Brc20Tickers::new();
+        let ticker = &transfer_info.ticker;
+
+        match destination {
+            TransferDestination::Wallet(ref new_owner) => {
+                // Add to recipient's balance
+                let mut new_owner_balance = balances_table.get(new_owner, ticker)
+                    .and_then(|d| serde_json::from_slice(&d).ok())
+                    .unwrap_or_else(|| Balance::new(ticker.clone()));
+                new_owner_balance.total_balance += transfer_info.amount;
+                new_owner_balance.available_balance += transfer_info.amount;
+                balances_table.set(new_owner, ticker, &serde_json::to_vec(&new_owner_balance)?);
+
+                // Deduct from sender's total_balance (available was already reduced at inscribe)
+                if let Some(sender_data) = balances_table.get(&transfer_info.sender, ticker) {
+                    let mut sender_balance: Balance = serde_json::from_slice(&sender_data)?;
+                    sender_balance.total_balance -= transfer_info.amount;
+                    balances_table.set(&transfer_info.sender, ticker, &serde_json::to_vec(&sender_balance)?);
+                }
+            }
+            TransferDestination::Burn => {
+                // OP_RETURN: reduce sender's total_balance, increment ticker's burned_supply
+                if let Some(sender_data) = balances_table.get(&transfer_info.sender, ticker) {
+                    let mut sender_balance: Balance = serde_json::from_slice(&sender_data)?;
+                    sender_balance.total_balance -= transfer_info.amount;
+                    balances_table.set(&transfer_info.sender, ticker, &serde_json::to_vec(&sender_balance)?);
+                }
+                if let Some(ticker_data) = tickers_table.get(ticker) {
+                    let mut ticker_entry: Ticker = serde_json::from_slice(&ticker_data)?;
+                    ticker_entry.burned_supply += transfer_info.amount;
+                    tickers_table.set(ticker, &serde_json::to_vec(&ticker_entry)?);
+                }
+            }
+            TransferDestination::Brc20ProgDeposit => {
+                // BRC20-PROG OP_RETURN: phase-gated deposit
+                // Before phase 1 or for tickers < 6 bytes before phase 2: treat as burn
+                let ticker_len = ticker.as_bytes().len();
+                let should_burn = height < BRC20_PROG_PHASE_ONE_HEIGHT
+                    || (ticker_len < 6 && height < BRC20_PROG_ALL_TICKERS_HEIGHT);
+
+                if should_burn {
+                    // Burn: same as OP_RETURN
+                    if let Some(sender_data) = balances_table.get(&transfer_info.sender, ticker) {
+                        let mut sender_balance: Balance = serde_json::from_slice(&sender_data)?;
+                        sender_balance.total_balance -= transfer_info.amount;
+                        balances_table.set(&transfer_info.sender, ticker, &serde_json::to_vec(&sender_balance)?);
+                    }
+                    if let Some(ticker_data) = tickers_table.get(ticker) {
+                        let mut ticker_entry: Ticker = serde_json::from_slice(&ticker_data)?;
+                        ticker_entry.burned_supply += transfer_info.amount;
+                        tickers_table.set(ticker, &serde_json::to_vec(&ticker_entry)?);
+                    }
+                } else {
+                    // Deposit to BRC20-PROG: move tokens to the prog address balance
+                    let mut prog_balance = balances_table.get(BRC20_PROG_OP_RETURN_PKSCRIPT, ticker)
+                        .and_then(|d| serde_json::from_slice(&d).ok())
+                        .unwrap_or_else(|| Balance::new(ticker.clone()));
+                    prog_balance.total_balance += transfer_info.amount;
+                    prog_balance.available_balance += transfer_info.amount;
+                    balances_table.set(BRC20_PROG_OP_RETURN_PKSCRIPT, ticker, &serde_json::to_vec(&prog_balance)?);
+
+                    // Deduct from sender
+                    if let Some(sender_data) = balances_table.get(&transfer_info.sender, ticker) {
+                        let mut sender_balance: Balance = serde_json::from_slice(&sender_data)?;
+                        sender_balance.total_balance -= transfer_info.amount;
+                        balances_table.set(&transfer_info.sender, ticker, &serde_json::to_vec(&sender_balance)?);
+                    }
+                }
+            }
+            TransferDestination::SentAsFee => {
+                // Inscription spent as fee: return tokens to sender's available_balance
+                if let Some(sender_data) = balances_table.get(&transfer_info.sender, ticker) {
+                    let mut sender_balance: Balance = serde_json::from_slice(&sender_data)?;
+                    sender_balance.available_balance += transfer_info.amount;
+                    balances_table.set(&transfer_info.sender, ticker, &serde_json::to_vec(&sender_balance)?);
+                }
+                // Note: total_balance is unchanged (it was never deducted at inscribe,
+                // only available_balance was reduced)
+            }
         }
         Ok(())
+    }
+
+    /// Determine transfer destination from a pkscript hex string.
+    /// Used by process_brc20_transfers to classify the output.
+    pub fn classify_destination(pkscript_hex: &str, sent_as_fee: bool) -> TransferDestination {
+        if sent_as_fee {
+            return TransferDestination::SentAsFee;
+        }
+        if pkscript_hex == BRC20_PROG_OP_RETURN_PKSCRIPT {
+            return TransferDestination::Brc20ProgDeposit;
+        }
+        if pkscript_hex.starts_with(OP_RETURN_PKSCRIPT) {
+            return TransferDestination::Burn;
+        }
+        // Empty pkscript (should not happen, but treat as fee return)
+        if pkscript_hex.is_empty() {
+            return TransferDestination::SentAsFee;
+        }
+        // Normal address
+        TransferDestination::Wallet(pkscript_hex.to_string())
     }
 }
