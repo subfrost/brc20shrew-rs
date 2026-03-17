@@ -28,11 +28,11 @@ pub const PRECOMPILE_LOCKED_PKSCRIPT: Address = address_from_low_byte(0xFB);
 /// Precompile address for OP_RETURN tx ID
 pub const PRECOMPILE_OP_RETURN_TXID: Address = address_from_low_byte(0xFA);
 
-/// Gas costs
-pub const GAS_BIP322_VERIFY: u64 = 10_000;
-pub const GAS_BTC_RPC_CALL: u64 = 5_000;
-pub const GAS_LOCKED_PKSCRIPT: u64 = 3_000;
-pub const GAS_OP_RETURN_TXID: u64 = 100;
+/// Gas costs (aligned with canonical brc20-prog implementation)
+pub const GAS_BIP322_VERIFY: u64 = 20_000;
+pub const GAS_BTC_RPC_CALL: u64 = 400_000;
+pub const GAS_LOCKED_PKSCRIPT: u64 = 20_000;
+pub const GAS_OP_RETURN_TXID: u64 = 40;
 
 const fn address_from_low_byte(byte: u8) -> Address {
     let mut bytes = [0u8; 20];

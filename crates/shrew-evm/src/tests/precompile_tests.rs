@@ -60,8 +60,8 @@ fn test_op_return_txid_gas_cost() {
 #[test]
 fn test_op_return_txid_insufficient_gas() {
     let txid = B256::from([0x22; 32]);
-    // GAS_OP_RETURN_TXID is 100, pass only 50
-    let result = execute_precompile(&PRECOMPILE_OP_RETURN_TXID, &[], 50, txid).unwrap();
+    // GAS_OP_RETURN_TXID is 40, pass only 10
+    let result = execute_precompile(&PRECOMPILE_OP_RETURN_TXID, &[], 10, txid).unwrap();
     assert!(!result.success, "Should fail with insufficient gas");
     assert!(result.output.is_empty(), "Output should be empty on gas failure");
 }
@@ -82,7 +82,7 @@ fn test_bip322_verify_returns_false() {
 #[test]
 fn test_bip322_verify_insufficient_gas() {
     let txid = B256::ZERO;
-    // GAS_BIP322_VERIFY is 10_000, pass only 5000
+    // GAS_BIP322_VERIFY is 20_000, pass only 5000
     let result = execute_precompile(&PRECOMPILE_BIP322, &[0u8; 64], 5000, txid).unwrap();
     assert!(!result.success, "Should fail with insufficient gas");
     assert!(result.output.is_empty(), "Output should be empty on gas failure");
@@ -106,7 +106,7 @@ fn test_btc_tx_details_valid_input() {
     let txid = B256::ZERO;
     // Input of 36+ bytes should succeed
     let valid_input = vec![0u8; 36];
-    let result = execute_precompile(&PRECOMPILE_TX_DETAILS, &valid_input, 100_000, txid).unwrap();
+    let result = execute_precompile(&PRECOMPILE_TX_DETAILS, &valid_input, 500_000, txid).unwrap();
     assert!(result.success, "Should succeed with 36 byte input");
     assert_eq!(result.gas_used, GAS_BTC_RPC_CALL);
 }
@@ -115,7 +115,7 @@ fn test_btc_tx_details_valid_input() {
 fn test_btc_tx_details_insufficient_gas() {
     let txid = B256::ZERO;
     let valid_input = vec![0u8; 36];
-    // GAS_BTC_RPC_CALL is 5000, pass only 100
+    // GAS_BTC_RPC_CALL is 400_000, pass only 100
     let result = execute_precompile(&PRECOMPILE_TX_DETAILS, &valid_input, 100, txid).unwrap();
     assert!(!result.success, "Should fail with insufficient gas");
 }
@@ -127,7 +127,7 @@ fn test_btc_tx_details_insufficient_gas() {
 #[test]
 fn test_last_sat_location_placeholder() {
     let txid = B256::ZERO;
-    let result = execute_precompile(&PRECOMPILE_LAST_SAT_LOC, &[], 100_000, txid).unwrap();
+    let result = execute_precompile(&PRECOMPILE_LAST_SAT_LOC, &[], 500_000, txid).unwrap();
     assert!(result.success, "Last sat location stub should succeed");
     assert_eq!(result.gas_used, GAS_BTC_RPC_CALL);
     assert_eq!(result.output.len(), 32, "Output should be 32 bytes");

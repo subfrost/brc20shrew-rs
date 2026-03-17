@@ -1,8 +1,9 @@
 use crate::tables::*;
 use shrew_ord::tables::HEIGHT_TO_BLOCK_HASH;
-use revm::primitives::{Account, AccountInfo, Bytecode, B256, U256, Address, HashMap as RevmHashMap};
+use revm::primitives::{Address, B256, U256};
+use revm::state::{Account, AccountInfo, Bytecode};
 use revm::{Database, DatabaseCommit};
-use revm_database_interface::DBErrorMarker;
+use revm::database_interface::DBErrorMarker;
 use metashrew_support::index_pointer::KeyValuePointer;
 use std::sync::Arc;
 use std::fmt;
@@ -60,8 +61,8 @@ impl Database for MetashrewDB {
         }
     }
 
-    fn block_hash(&mut self, number: U256) -> Result<B256, Self::Error> {
-        let height_bytes = (number.as_limbs()[0] as u32).to_le_bytes().to_vec();
+    fn block_hash(&mut self, number: u64) -> Result<B256, Self::Error> {
+        let height_bytes = (number as u32).to_le_bytes().to_vec();
         let pointer = HEIGHT_TO_BLOCK_HASH.select(&height_bytes);
         let result = pointer.get();
         if result.is_empty() {
@@ -73,11 +74,10 @@ impl Database for MetashrewDB {
 }
 
 impl DatabaseCommit for MetashrewDB {
-    fn commit(&mut self, changes: RevmHashMap<Address, Account>) {
+    fn commit(&mut self, changes: revm::primitives::map::HashMap<Address, Account>) {
         for (address, account) in changes {
             if account.is_selfdestructed() {
-                let mut pointer = EVM_ACCOUNTS.select(&address.to_vec());
-                pointer.set(Arc::new(vec![]));
+                EVM_ACCOUNTS.select(&address.to_vec()).set(Arc::new(vec![]));
             } else {
                 let account_info_bytes = bincode::serialize(&account.info).unwrap();
                 EVM_ACCOUNTS.select(&address.to_vec()).set(Arc::new(account_info_bytes));

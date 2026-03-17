@@ -21,7 +21,6 @@ anyhow = { workspace = true }
 thiserror = { workspace = true }
 lazy_static = { workspace = true }
 revm = { workspace = true }
-revm-database-interface = { workspace = true }
 alloy-primitives = { workspace = true }
 alloy-sol-types = { workspace = true }
 sha2 = { workspace = true }

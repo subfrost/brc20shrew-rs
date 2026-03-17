@@ -28,7 +28,6 @@ thiserror = { workspace = true }
 lazy_static = { workspace = true }
 prost = { workspace = true }
 revm = { workspace = true }
-revm-database-interface = { workspace = true }
 alloy-primitives = { workspace = true }
 alloy-sol-types = { workspace = true }
 wasm-bindgen = { workspace = true }
