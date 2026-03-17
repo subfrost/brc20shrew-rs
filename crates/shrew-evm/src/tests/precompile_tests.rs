@@ -72,13 +72,12 @@ fn test_op_return_txid_insufficient_gas() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn test_bip322_verify_returns_false() {
+fn test_bip322_verify_invalid_abi_fails() {
     let txid = B256::ZERO;
-    // Need at least 100 bytes for valid ABI input
+    // 100 zero bytes — valid length but invalid ABI structure (bad offsets/data)
+    // The real implementation tries to decode ABI and fails
     let result = execute_precompile(&PRECOMPILE_BIP322, &[0u8; 100], 100_000, txid, 840000).unwrap();
-    assert!(result.success, "BIP322 verify should succeed (return the result)");
-    assert_eq!(result.output.len(), 32, "Output should be 32 bytes");
-    assert_eq!(result.output[31], 0, "Stub should return false (0)");
+    assert!(!result.success, "Invalid ABI should fail verification");
 }
 
 #[test]

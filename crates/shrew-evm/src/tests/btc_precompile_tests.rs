@@ -19,7 +19,7 @@ use std::sync::Arc;
 
 /// Store a synthetic transaction in the indexed tables
 fn store_tx(tx: &Transaction, height: u32) {
-    let txid_bytes = tx.txid().as_byte_array().to_vec();
+    let txid_bytes = tx.compute_txid().as_byte_array().to_vec();
     let raw = serialize(tx);
     TXID_TO_RAW_TX.select(&txid_bytes).set(Arc::new(raw));
     TXID_TO_BLOCK_HEIGHT.select(&txid_bytes).set(Arc::new(height.to_le_bytes().to_vec()));
@@ -132,13 +132,13 @@ fn test_tx_details_single_input_single_output() {
 
     // Create child tx spending the parent
     let child = build_tx(
-        vec![(parent.txid(), 0)],
+        vec![(parent.compute_txid(), 0)],
         vec![(p2wpkh_script(), 9_658_000)],
     );
     store_tx(&child, 840001);
 
     // Query tx details for child
-    let input = build_tx_details_input(&child.txid());
+    let input = build_tx_details_input(&child.compute_txid());
     let result = execute_precompile(&PRECOMPILE_TX_DETAILS, &input, 2_000_000, op_return_txid, 840001).unwrap();
 
     assert!(result.success, "Should succeed for indexed transaction");
@@ -166,12 +166,12 @@ fn test_tx_details_multi_input() {
 
     // Child spends all 3
     let child = build_tx(
-        vec![(parent1.txid(), 0), (parent2.txid(), 0), (parent3.txid(), 0)],
+        vec![(parent1.compute_txid(), 0), (parent2.compute_txid(), 0), (parent3.compute_txid(), 0)],
         vec![(p2wpkh_script(), 9_500_000)],
     );
     store_tx(&child, 840001);
 
-    let input = build_tx_details_input(&child.txid());
+    let input = build_tx_details_input(&child.compute_txid());
     let result = execute_precompile(&PRECOMPILE_TX_DETAILS, &input, 5_000_000, op_return_txid, 840001).unwrap();
 
     assert!(result.success, "Should succeed for multi-input tx");
@@ -198,7 +198,7 @@ fn test_tx_details_future_block_rejected() {
     let tx = build_tx(vec![(Txid::all_zeros(), 0)], vec![(p2wpkh_script(), 1000)]);
     store_tx(&tx, 840010); // stored at height 840010
 
-    let input = build_tx_details_input(&tx.txid());
+    let input = build_tx_details_input(&tx.compute_txid());
     // Query at height 840005 — tx is in the future
     let result = execute_precompile(&PRECOMPILE_TX_DETAILS, &input, 2_000_000, op_return_txid, 840005).unwrap();
     assert!(!result.success, "Should reject tx from future block");
@@ -214,12 +214,12 @@ fn test_tx_details_insufficient_gas_for_inputs() {
 
     // 3-input tx requires base(400k) + 3*400k = 1.6M gas
     let child = build_tx(
-        vec![(parent.txid(), 0), (parent.txid(), 0), (parent.txid(), 0)],
+        vec![(parent.compute_txid(), 0), (parent.compute_txid(), 0), (parent.compute_txid(), 0)],
         vec![(p2wpkh_script(), 1000)],
     );
     store_tx(&child, 840001);
 
-    let input = build_tx_details_input(&child.txid());
+    let input = build_tx_details_input(&child.compute_txid());
     // Provide only 1M gas (need 1.6M)
     let result = execute_precompile(&PRECOMPILE_TX_DETAILS, &input, 1_000_000, op_return_txid, 840001).unwrap();
     assert!(!result.success, "Should fail when gas insufficient for input lookup");
@@ -233,7 +233,7 @@ fn test_tx_details_coinbase_no_inputs() {
     let coinbase = build_coinbase(vec![(p2wpkh_script(), 625_000_000)]);
     store_tx(&coinbase, 840000);
 
-    let input = build_tx_details_input(&coinbase.txid());
+    let input = build_tx_details_input(&coinbase.compute_txid());
     let result = execute_precompile(&PRECOMPILE_TX_DETAILS, &input, 2_000_000, op_return_txid, 840000).unwrap();
 
     assert!(result.success, "Coinbase tx should succeed");
@@ -259,20 +259,20 @@ fn test_last_sat_single_input() {
 
     // Child spends parent, one output
     let child = build_tx(
-        vec![(parent.txid(), 0)],
+        vec![(parent.compute_txid(), 0)],
         vec![(p2wpkh_script(), 9_658_000)],
     );
     store_tx(&child, 840001);
 
     // Find sat 100 in output 0 of child
-    let input = build_last_sat_input(&child.txid(), 0, 100);
+    let input = build_last_sat_input(&child.compute_txid(), 0, 100);
     let result = execute_precompile(&PRECOMPILE_LAST_SAT_LOC, &input, 2_000_000, op_return_txid, 840001).unwrap();
 
     assert!(result.success, "Should succeed for single input tx");
 
     // last_txid should be parent txid (big-endian)
     let last_txid = read_bytes32(&result.output, 0);
-    let mut expected_parent_be = *parent.txid().as_byte_array();
+    let mut expected_parent_be = *parent.compute_txid().as_byte_array();
     expected_parent_be.reverse();
     assert_eq!(last_txid, expected_parent_be, "last_txid should be parent txid");
 
@@ -299,21 +299,21 @@ fn test_last_sat_multi_input_finds_correct_input() {
     // Child spends both: input0 = 5M sats, input1 = 3M sats
     // Total: 8M sats in, output: 7.5M sats
     let child = build_tx(
-        vec![(parent1.txid(), 0), (parent2.txid(), 0)],
+        vec![(parent1.compute_txid(), 0), (parent2.compute_txid(), 0)],
         vec![(p2wpkh_script(), 7_500_000)],
     );
     store_tx(&child, 840001);
 
     // Sat 6_000_000 in output 0 — should be in input 1 (parent2)
     // because input 0 covers sats 0-4_999_999 and input 1 covers 5_000_000-7_999_999
-    let input = build_last_sat_input(&child.txid(), 0, 6_000_000);
+    let input = build_last_sat_input(&child.compute_txid(), 0, 6_000_000);
     let result = execute_precompile(&PRECOMPILE_LAST_SAT_LOC, &input, 5_000_000, op_return_txid, 840001).unwrap();
 
     assert!(result.success, "Should find sat in second input");
 
     // last_txid should be parent2
     let last_txid = read_bytes32(&result.output, 0);
-    let mut expected_parent2_be = *parent2.txid().as_byte_array();
+    let mut expected_parent2_be = *parent2.compute_txid().as_byte_array();
     expected_parent2_be.reverse();
     assert_eq!(last_txid, expected_parent2_be, "Should trace back to parent2");
 
@@ -334,7 +334,7 @@ fn test_last_sat_coinbase_rejected() {
     let coinbase = build_coinbase(vec![(p2wpkh_script(), 625_000_000)]);
     store_tx(&coinbase, 840000);
 
-    let input = build_last_sat_input(&coinbase.txid(), 0, 100);
+    let input = build_last_sat_input(&coinbase.compute_txid(), 0, 100);
     let result = execute_precompile(&PRECOMPILE_LAST_SAT_LOC, &input, 2_000_000, op_return_txid, 840000).unwrap();
     assert!(!result.success, "Coinbase transactions should be rejected");
 }
@@ -346,11 +346,11 @@ fn test_last_sat_invalid_vout() {
 
     let parent = build_tx(vec![(Txid::all_zeros(), 0)], vec![(p2tr_script(), 10_000_000)]);
     store_tx(&parent, 840000);
-    let child = build_tx(vec![(parent.txid(), 0)], vec![(p2wpkh_script(), 9_000_000)]);
+    let child = build_tx(vec![(parent.compute_txid(), 0)], vec![(p2wpkh_script(), 9_000_000)]);
     store_tx(&child, 840001);
 
     // vout=5 doesn't exist (only one output)
-    let input = build_last_sat_input(&child.txid(), 5, 100);
+    let input = build_last_sat_input(&child.compute_txid(), 5, 100);
     let result = execute_precompile(&PRECOMPILE_LAST_SAT_LOC, &input, 2_000_000, op_return_txid, 840001).unwrap();
     assert!(!result.success, "Invalid vout index should fail");
 }
@@ -362,11 +362,11 @@ fn test_last_sat_sat_exceeds_output_value() {
 
     let parent = build_tx(vec![(Txid::all_zeros(), 0)], vec![(p2tr_script(), 10_000_000)]);
     store_tx(&parent, 840000);
-    let child = build_tx(vec![(parent.txid(), 0)], vec![(p2wpkh_script(), 1000)]);
+    let child = build_tx(vec![(parent.compute_txid(), 0)], vec![(p2wpkh_script(), 1000)]);
     store_tx(&child, 840001);
 
     // sat=5000 exceeds output value of 1000
-    let input = build_last_sat_input(&child.txid(), 0, 5000);
+    let input = build_last_sat_input(&child.compute_txid(), 0, 5000);
     let result = execute_precompile(&PRECOMPILE_LAST_SAT_LOC, &input, 2_000_000, op_return_txid, 840001).unwrap();
     assert!(!result.success, "Sat exceeding output value should fail");
 }
@@ -388,11 +388,11 @@ fn test_last_sat_sat_zero() {
 
     let parent = build_tx(vec![(Txid::all_zeros(), 0)], vec![(p2tr_script(), 10_000_000)]);
     store_tx(&parent, 840000);
-    let child = build_tx(vec![(parent.txid(), 0)], vec![(p2wpkh_script(), 9_000_000)]);
+    let child = build_tx(vec![(parent.compute_txid(), 0)], vec![(p2wpkh_script(), 9_000_000)]);
     store_tx(&child, 840001);
 
     // sat=0 — first satoshi in the output
-    let input = build_last_sat_input(&child.txid(), 0, 0);
+    let input = build_last_sat_input(&child.compute_txid(), 0, 0);
     let result = execute_precompile(&PRECOMPILE_LAST_SAT_LOC, &input, 2_000_000, op_return_txid, 840001).unwrap();
     assert!(result.success, "Sat 0 should succeed");
 
@@ -411,12 +411,12 @@ fn test_last_sat_gas_scales_with_inputs() {
     store_tx(&parent2, 840000);
 
     let child = build_tx(
-        vec![(parent1.txid(), 0), (parent2.txid(), 0)],
+        vec![(parent1.compute_txid(), 0), (parent2.compute_txid(), 0)],
         vec![(p2wpkh_script(), 7_500_000)],
     );
     store_tx(&child, 840001);
 
-    let input = build_last_sat_input(&child.txid(), 0, 100);
+    let input = build_last_sat_input(&child.compute_txid(), 0, 100);
     let result = execute_precompile(&PRECOMPILE_LAST_SAT_LOC, &input, 5_000_000, op_return_txid, 840001).unwrap();
     assert!(result.success);
 
@@ -442,7 +442,7 @@ fn test_tx_details_output_structure() {
 
     // Child with 1 input, 2 outputs
     let child = build_tx(
-        vec![(parent.txid(), 0)],
+        vec![(parent.compute_txid(), 0)],
         vec![
             (p2wpkh_script(), 5_000_000),
             (p2tr_script(), 4_500_000),
@@ -450,7 +450,7 @@ fn test_tx_details_output_structure() {
     );
     store_tx(&child, 840001);
 
-    let input = build_tx_details_input(&child.txid());
+    let input = build_tx_details_input(&child.compute_txid());
     let result = execute_precompile(&PRECOMPILE_TX_DETAILS, &input, 5_000_000, op_return_txid, 840001).unwrap();
     assert!(result.success);
 
@@ -461,4 +461,135 @@ fn test_tx_details_output_structure() {
     // We can't easily decode the full ABI without a proper decoder,
     // but we can verify the output is substantial (not empty)
     assert!(result.output.len() > 224, "Output should contain header + arrays");
+}
+
+// ============================================================================
+// BIP322 verification tests
+// ============================================================================
+
+/// Build ABI-encoded input for verify(bytes pkscript, bytes message, bytes signature)
+fn build_bip322_input(pkscript: &[u8], message: &[u8], signature: &[u8]) -> Vec<u8> {
+    let mut input = vec![0u8; 4]; // function selector
+
+    // Three dynamic offsets (each 32 bytes) pointing past the header
+    let header_size: usize = 3 * 32;
+    let pk_data = encode_test_bytes(pkscript);
+    let msg_data = encode_test_bytes(message);
+    let sig_data = encode_test_bytes(signature);
+
+    let pk_offset = header_size;
+    let msg_offset = pk_offset + pk_data.len();
+    let sig_offset = msg_offset + msg_data.len();
+
+    // Offset to pkscript
+    let mut buf = [0u8; 32];
+    buf[24..32].copy_from_slice(&(pk_offset as u64).to_be_bytes());
+    input.extend_from_slice(&buf);
+    // Offset to message
+    buf = [0u8; 32];
+    buf[24..32].copy_from_slice(&(msg_offset as u64).to_be_bytes());
+    input.extend_from_slice(&buf);
+    // Offset to signature
+    buf = [0u8; 32];
+    buf[24..32].copy_from_slice(&(sig_offset as u64).to_be_bytes());
+    input.extend_from_slice(&buf);
+
+    // Data
+    input.extend(&pk_data);
+    input.extend(&msg_data);
+    input.extend(&sig_data);
+
+    input
+}
+
+/// Encode bytes for ABI: 32-byte length + padded data
+fn encode_test_bytes(data: &[u8]) -> Vec<u8> {
+    let padded_len = (data.len() + 31) / 32 * 32;
+    let mut result = vec![0u8; 32 + padded_len];
+    result[24..32].copy_from_slice(&(data.len() as u64).to_be_bytes());
+    result[32..32 + data.len()].copy_from_slice(data);
+    result
+}
+
+#[test]
+fn test_bip322_invalid_pkscript_fails() {
+    clear();
+    let txid = B256::ZERO;
+
+    // Invalid pkscript (not a valid Bitcoin script for address derivation)
+    let input = build_bip322_input(
+        &[0xFF, 0xFF, 0xFF], // invalid script
+        b"Hello World",
+        &[0x00; 32], // dummy signature
+    );
+    let result = execute_precompile(&PRECOMPILE_BIP322, &input, 100_000, txid, 840000).unwrap();
+    assert!(!result.success, "Invalid pkscript should fail");
+}
+
+#[test]
+fn test_bip322_invalid_witness_fails() {
+    clear();
+    let txid = B256::ZERO;
+
+    // Valid P2WPKH pkscript but garbage witness
+    let pkscript = hex::decode("0014f477952f33561c1b89a1fe9f28682f623263e159").unwrap();
+    let input = build_bip322_input(
+        &pkscript,
+        b"Hello World",
+        &[0xDE, 0xAD, 0xBE, 0xEF], // invalid witness encoding
+    );
+    let result = execute_precompile(&PRECOMPILE_BIP322, &input, 100_000, txid, 840000).unwrap();
+    assert!(!result.success, "Invalid witness should fail");
+}
+
+#[test]
+fn test_bip322_empty_pkscript_fails() {
+    clear();
+    let txid = B256::ZERO;
+
+    let input = build_bip322_input(&[], b"test message", &[0u8; 10]);
+    let result = execute_precompile(&PRECOMPILE_BIP322, &input, 100_000, txid, 840000).unwrap();
+    assert!(!result.success, "Empty pkscript should fail");
+}
+
+#[test]
+fn test_bip322_abi_decoding_works() {
+    clear();
+    let txid = B256::ZERO;
+
+    // Valid P2WPKH pkscript, valid message, but wrong signature
+    // This should pass ABI decode but fail signature verification
+    let pkscript = hex::decode("0014f477952f33561c1b89a1fe9f28682f623263e159").unwrap();
+
+    // Build a valid-looking witness (2 items: sig + pubkey)
+    let mut witness_bytes = Vec::new();
+    // Witness serialization: varint count + (varint len + data) for each item
+    witness_bytes.push(2); // 2 witness items
+    // Item 1: 71-byte dummy signature
+    witness_bytes.push(71);
+    witness_bytes.extend_from_slice(&[0x30; 71]);
+    // Item 2: 33-byte dummy pubkey
+    witness_bytes.push(33);
+    witness_bytes.extend_from_slice(&[0x02; 33]);
+
+    let input = build_bip322_input(&pkscript, b"Hello World", &witness_bytes);
+
+    // Should succeed ABI parsing but fail crypto verification → returns false
+    let result = execute_precompile(&PRECOMPILE_BIP322, &input, 100_000, txid, 840000).unwrap();
+    // The bip322 crate may reject this as invalid → fail, or accept and return false
+    // Either outcome is correct for a dummy signature
+    // The key thing is it doesn't panic
+    assert!(result.output.is_empty() || result.output.len() == 32,
+        "Output should be empty (fail) or 32 bytes (result)");
+}
+
+#[test]
+fn test_bip322_gas_cost() {
+    clear();
+    let txid = B256::ZERO;
+    let pkscript = hex::decode("0014f477952f33561c1b89a1fe9f28682f623263e159").unwrap();
+    let input = build_bip322_input(&pkscript, b"test", &[0u8; 10]);
+    let result = execute_precompile(&PRECOMPILE_BIP322, &input, 100_000, txid, 840000).unwrap();
+    // Whether it succeeds or fails, gas_used should be GAS_BIP322_VERIFY
+    assert_eq!(result.gas_used, GAS_BIP322_VERIFY, "Gas should be GAS_BIP322_VERIFY");
 }

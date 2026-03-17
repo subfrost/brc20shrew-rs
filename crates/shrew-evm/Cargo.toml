@@ -26,6 +26,7 @@ alloy-sol-types = { workspace = true }
 sha2 = { workspace = true }
 metashrew-core = { workspace = true }
 metashrew-support = { workspace = true }
+bip322 = { workspace = true }
 
 [dev-dependencies]
 metashrew-core = { git = "https://github.com/sandshrewmetaprotocols/metashrew", features = ["test-utils"], branch = "sandshrewmetadev/v9.1.0", default-features = false }

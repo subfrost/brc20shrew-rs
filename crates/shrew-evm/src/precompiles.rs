@@ -12,10 +12,10 @@
 
 use bitcoin::blockdata::opcodes;
 use bitcoin::blockdata::script::Builder;
-use bitcoin::consensus::deserialize;
+use bitcoin::consensus::{deserialize, Decodable};
 use bitcoin::key::UntweakedPublicKey;
 use bitcoin::taproot::TaprootBuilder;
-use bitcoin::{Amount, ScriptBuf, Transaction};
+use bitcoin::{Amount, Network, ScriptBuf, Transaction, Witness};
 use bitcoin_hashes::Hash;
 use metashrew_support::index_pointer::KeyValuePointer;
 use revm::primitives::{Address, B256};
@@ -201,32 +201,79 @@ fn encode_bytes_array(items: &[Vec<u8>]) -> Vec<u8> {
 ///
 /// ABI: verify(bytes pkscript, bytes message, bytes signature) -> bool
 ///
-/// NOTE: Full BIP322 verification requires the `bip322` crate which needs
-/// bitcoin 0.32+. Currently we have bitcoin 0.30.2.
-/// This implementation decodes the ABI parameters correctly but returns false
-/// for all verification attempts until the bitcoin crate is upgraded.
+/// Decodes pkscript → Address, decodes signature as Witness, then calls
+/// bip322::verify_simple() for cryptographic verification.
 pub fn bip322_verify(input: &[u8], gas_limit: u64) -> PrecompileResult {
     if gas_limit < GAS_BIP322_VERIFY {
         return PrecompileResult { success: false, gas_used: gas_limit, output: vec![] };
     }
 
+    let fail = || PrecompileResult { success: false, gas_used: GAS_BIP322_VERIFY, output: vec![] };
+
     // Validate minimum input size (4 selector + 3*32 offsets = 100 bytes minimum)
-    if input.len() < 100 {
-        return PrecompileResult { success: false, gas_used: GAS_BIP322_VERIFY, output: vec![] };
-    }
+    if input.len() < 100 { return fail(); }
 
     // Validate input size limit (32KB per OPI spec)
-    if input.len() > 32768 {
-        return PrecompileResult { success: false, gas_used: GAS_BIP322_VERIFY, output: vec![] };
+    if input.len() > 32768 { return fail(); }
+
+    // Decode ABI: verify(bytes pkscript, bytes message, bytes signature)
+    // Skip 4-byte selector, then 3 offsets, then 3 dynamic byte arrays
+    let data = &input[4..];
+
+    // Read offsets
+    let pk_offset = match u256_to_usize(data[0..32].try_into().unwrap_or([0u8; 32])) {
+        Some(o) => o, None => return fail(),
+    };
+    let msg_offset = match u256_to_usize(data[32..64].try_into().unwrap_or([0u8; 32])) {
+        Some(o) => o, None => return fail(),
+    };
+    let sig_offset = match u256_to_usize(data[64..96].try_into().unwrap_or([0u8; 32])) {
+        Some(o) => o, None => return fail(),
+    };
+
+    // Read each dynamic bytes (length + data)
+    let pkscript_bytes = match read_abi_bytes(data, pk_offset) {
+        Some(b) => b, None => return fail(),
+    };
+    let message_bytes = match read_abi_bytes(data, msg_offset) {
+        Some(b) => b, None => return fail(),
+    };
+    let signature_bytes = match read_abi_bytes(data, sig_offset) {
+        Some(b) => b, None => return fail(),
+    };
+
+    // Convert pkscript to Bitcoin Address
+    let script = bitcoin::Script::from_bytes(&pkscript_bytes);
+    let address = match bitcoin::Address::from_script(script, Network::Bitcoin) {
+        Ok(a) => a,
+        Err(_) => return fail(),
+    };
+
+    // Decode signature as Bitcoin Witness
+    let witness = match Witness::consensus_decode(&mut &signature_bytes[..]) {
+        Ok(w) => w,
+        Err(_) => return fail(),
+    };
+
+    // Verify using bip322
+    let verified = bip322::verify_simple(&address, &message_bytes, witness).is_ok();
+
+    // ABI-encode bool result
+    let mut output = vec![0u8; 32];
+    if verified {
+        output[31] = 1; // true
     }
 
-    // TODO: Full BIP322 verification when bitcoin crate is upgraded to 0.32+
-    // For now, return false (verification failed) — this is the safe default
-    // since a false negative is better than a false positive for signature verification.
-    let mut output = vec![0u8; 32];
-    output[31] = 0; // false
-
     PrecompileResult { success: true, gas_used: GAS_BIP322_VERIFY, output }
+}
+
+/// Read a dynamic bytes value from ABI data at the given offset.
+/// Format: 32 bytes length + N bytes data
+fn read_abi_bytes(data: &[u8], offset: usize) -> Option<Vec<u8>> {
+    if data.len() < offset + 32 { return None; }
+    let len = u256_to_usize(data[offset..offset + 32].try_into().ok()?)?;
+    if data.len() < offset + 32 + len { return None; }
+    Some(data[offset + 32..offset + 32 + len].to_vec())
 }
 
 // ============================================================================
