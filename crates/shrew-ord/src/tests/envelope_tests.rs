@@ -1,13 +1,13 @@
 use wasm_bindgen_test::wasm_bindgen_test as test;
 use crate::envelope::{parse_inscriptions_from_transaction, Inscription};
-use bitcoin::{Transaction, TxIn, TxOut, OutPoint, Witness, ScriptBuf, Sequence, Txid};
+use bitcoin::{Amount, Transaction, TxIn, TxOut, OutPoint, Witness, ScriptBuf, Sequence, Txid, transaction::Version};
 use shrew_test_helpers::inscriptions::*;
 use std::str::FromStr;
 
 /// Helper to build a transaction with a single witness element
 fn tx_with_witness(witness: Witness) -> Transaction {
     Transaction {
-        version: 1,
+        version: Version(1),
         lock_time: bitcoin::absolute::LockTime::ZERO,
         input: vec![TxIn {
             previous_output: OutPoint {
@@ -22,7 +22,7 @@ fn tx_with_witness(witness: Witness) -> Transaction {
             witness,
         }],
         output: vec![TxOut {
-            value: 100_000_000,
+            value: Amount::from_sat(100_000_000),
             script_pubkey: ScriptBuf::new(),
         }],
     }
@@ -134,7 +134,7 @@ fn test_parse_inscription_no_body() {
 #[test]
 fn test_parse_empty_witness() {
     let tx = Transaction {
-        version: 1,
+        version: Version(1),
         lock_time: bitcoin::absolute::LockTime::ZERO,
         input: vec![TxIn {
             previous_output: OutPoint::default(),
@@ -143,7 +143,7 @@ fn test_parse_empty_witness() {
             witness: Witness::new(),
         }],
         output: vec![TxOut {
-            value: 100_000_000,
+            value: Amount::from_sat(100_000_000),
             script_pubkey: ScriptBuf::new(),
         }],
     };

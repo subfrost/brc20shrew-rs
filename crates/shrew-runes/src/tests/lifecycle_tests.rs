@@ -15,7 +15,7 @@ fn make_runestone_tx(runestone: &Runestone) -> Transaction {
     let address = get_test_address(0);
     let script_pubkey = runestone.encipher();
     Transaction {
-        version: 2,
+        version: bitcoin::transaction::Version(2),
         lock_time: bitcoin::absolute::LockTime::ZERO,
         input: vec![TxIn {
             previous_output: OutPoint::null(),
@@ -24,8 +24,8 @@ fn make_runestone_tx(runestone: &Runestone) -> Transaction {
             witness: Witness::new(),
         }],
         output: vec![
-            TxOut { value: 10000, script_pubkey: address.script_pubkey() },
-            TxOut { value: 0, script_pubkey },
+            TxOut { value: bitcoin::Amount::from_sat(10000), script_pubkey: address.script_pubkey() },
+            TxOut { value: bitcoin::Amount::ZERO, script_pubkey },
         ],
     }
 }
@@ -115,7 +115,7 @@ fn test_etch_mint_transfer_lifecycle() {
     };
     let script_pubkey = edict_runestone.encipher();
     let transfer_tx = Transaction {
-        version: 2,
+        version: bitcoin::transaction::Version(2),
         lock_time: bitcoin::absolute::LockTime::ZERO,
         input: vec![TxIn {
             previous_output: mint_outpoint,
@@ -124,8 +124,8 @@ fn test_etch_mint_transfer_lifecycle() {
             witness: Witness::new(),
         }],
         output: vec![
-            TxOut { value: 10000, script_pubkey: address.script_pubkey() },
-            TxOut { value: 0, script_pubkey },
+            TxOut { value: bitcoin::Amount::from_sat(10000), script_pubkey: address.script_pubkey() },
+            TxOut { value: bitcoin::Amount::ZERO, script_pubkey },
         ],
     };
     let transfer_block = create_block_with_txs(vec![create_coinbase_transaction(transfer_height), transfer_tx.clone()]);
@@ -340,7 +340,7 @@ fn test_multiple_edicts_same_tx() {
     };
     let script_pubkey = edict_runestone.encipher();
     let edict_tx = Transaction {
-        version: 2,
+        version: bitcoin::transaction::Version(2),
         lock_time: bitcoin::absolute::LockTime::ZERO,
         input: vec![TxIn {
             previous_output: premine_outpoint,
@@ -349,8 +349,8 @@ fn test_multiple_edicts_same_tx() {
             witness: Witness::new(),
         }],
         output: vec![
-            TxOut { value: 10000, script_pubkey: address.script_pubkey() },
-            TxOut { value: 0, script_pubkey },
+            TxOut { value: bitcoin::Amount::from_sat(10000), script_pubkey: address.script_pubkey() },
+            TxOut { value: bitcoin::Amount::ZERO, script_pubkey },
         ],
     };
 

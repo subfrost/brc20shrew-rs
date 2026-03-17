@@ -124,7 +124,7 @@ impl InscriptionIndexer {
         tx_index: usize,
         sat_ranges: &SatRanges,
     ) -> Result<TransactionIndexResult, IndexError> {
-        let mut result = TransactionIndexResult::new(tx.txid());
+        let mut result = TransactionIndexResult::new(tx.compute_txid());
 
         // Process BRC20 transfers first when inputs are spent
         self.process_brc20_transfers(tx)?;
@@ -159,7 +159,7 @@ impl InscriptionIndexer {
         envelope: &Envelope,
         sat_ranges: &SatRanges,
     ) -> Result<InscriptionIndexResult, IndexError> {
-        let inscription_id = InscriptionId::new(tx.txid(), envelope.input as u32);
+        let inscription_id = InscriptionId::new(tx.compute_txid(), envelope.input as u32);
         
         // Check if inscription already exists
         if !INSCRIPTION_ID_TO_SEQUENCE.select(&inscription_id.to_bytes()).get().is_empty() {
@@ -344,7 +344,7 @@ impl InscriptionIndexer {
         let offset = 0; // Simplification: offset is within the output, not across all outputs
 
         let outpoint = OutPoint {
-            txid: tx.txid(),
+            txid: tx.compute_txid(),
             vout,
         };
 
@@ -443,7 +443,7 @@ impl SatRanges {
         // For now, just store empty ranges
         for (vout, _output) in tx.output.iter().enumerate() {
             let outpoint = OutPoint {
-                txid: tx.txid(),
+                txid: tx.compute_txid(),
                 vout: vout as u32,
             };
             self.ranges.insert(outpoint, (0, 0));

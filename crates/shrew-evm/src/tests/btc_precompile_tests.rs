@@ -8,7 +8,7 @@ use crate::precompiles::*;
 use bitcoin::consensus::serialize;
 use bitcoin::{
     Transaction, TxIn, TxOut, OutPoint, Txid, Sequence, Witness,
-    ScriptBuf, absolute::LockTime,
+    Amount, ScriptBuf, absolute::LockTime,
 };
 use bitcoin_hashes::Hash;
 use metashrew_support::index_pointer::KeyValuePointer;
@@ -36,11 +36,11 @@ fn build_tx(inputs: Vec<(Txid, u32)>, outputs: Vec<(ScriptBuf, u64)>) -> Transac
 
     let txouts: Vec<TxOut> = outputs.iter().map(|(script, value)| TxOut {
         script_pubkey: script.clone(),
-        value: *value,
+        value: Amount::from_sat(*value),
     }).collect();
 
     Transaction {
-        version: 2,
+        version: bitcoin::transaction::Version(2),
         lock_time: LockTime::ZERO,
         input: txins,
         output: txouts,
@@ -51,15 +51,15 @@ fn build_tx(inputs: Vec<(Txid, u32)>, outputs: Vec<(ScriptBuf, u64)>) -> Transac
 fn build_coinbase(outputs: Vec<(ScriptBuf, u64)>) -> Transaction {
     let txouts: Vec<TxOut> = outputs.iter().map(|(script, value)| TxOut {
         script_pubkey: script.clone(),
-        value: *value,
+        value: Amount::from_sat(*value),
     }).collect();
 
     Transaction {
-        version: 2,
+        version: bitcoin::transaction::Version(2),
         lock_time: LockTime::ZERO,
         input: vec![TxIn {
             previous_output: OutPoint::null(),
-            script_sig: ScriptBuf::from(vec![0x03, 0x01, 0x00, 0x00]), // height encoding
+            script_sig: ScriptBuf::from(vec![0x03, 0x01, 0x00, 0x00]),
             sequence: Sequence::MAX,
             witness: Witness::new(),
         }],

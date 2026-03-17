@@ -176,7 +176,7 @@ fn test_inscription_with_all_fields() {
     let metadata = b"\xa1\x63key\x63val";
     let witness = create_inscription_envelope_with_metadata(b"application/json", body, Some(metadata));
     let tx = bitcoin::Transaction {
-        version: 1,
+        version: bitcoin::transaction::Version(1),
         lock_time: bitcoin::absolute::LockTime::ZERO,
         input: vec![bitcoin::TxIn {
             previous_output: bitcoin::OutPoint {
@@ -191,7 +191,7 @@ fn test_inscription_with_all_fields() {
             witness,
         }],
         output: vec![bitcoin::TxOut {
-            value: 100_000_000,
+            value: bitcoin::Amount::from_sat(100_000_000),
             script_pubkey: bitcoin::ScriptBuf::new(),
         }],
     };

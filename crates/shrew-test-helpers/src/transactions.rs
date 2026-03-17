@@ -1,5 +1,6 @@
-use bitcoin::{Transaction, TxIn, TxOut, OutPoint, Witness, ScriptBuf, Sequence, Txid, Address};
+use bitcoin::{Amount, Transaction, TxIn, TxOut, OutPoint, Witness, ScriptBuf, Sequence, Txid, Address};
 use bitcoin::address::NetworkChecked;
+use bitcoin::transaction::Version;
 use std::str::FromStr;
 
 use crate::state::get_test_address;
@@ -18,7 +19,7 @@ pub fn create_inscription_transaction(
     });
     let address = get_test_address(0);
     Transaction {
-        version: 1,
+        version: Version(1),
         lock_time: bitcoin::absolute::LockTime::ZERO,
         input: vec![TxIn {
             previous_output: prev_out,
@@ -27,7 +28,7 @@ pub fn create_inscription_transaction(
             witness,
         }],
         output: vec![TxOut {
-            value: 100_000_000,
+            value: Amount::from_sat(100_000_000),
             script_pubkey: address.script_pubkey(),
         }],
     }
@@ -46,7 +47,7 @@ pub fn create_inscription_transaction_to_address(
         vout: 0,
     });
     Transaction {
-        version: 1,
+        version: Version(1),
         lock_time: bitcoin::absolute::LockTime::ZERO,
         input: vec![TxIn {
             previous_output: prev_out,
@@ -55,7 +56,7 @@ pub fn create_inscription_transaction_to_address(
             witness,
         }],
         output: vec![TxOut {
-            value: 10000,
+            value: Amount::from_sat(10000),
             script_pubkey: to_address.script_pubkey(),
         }],
     }
@@ -64,7 +65,7 @@ pub fn create_inscription_transaction_to_address(
 /// Create a transfer transaction (no inscription, just moves an outpoint)
 pub fn create_transfer_transaction(prev_txid: &Txid, prev_vout: u32) -> Transaction {
     Transaction {
-        version: 2,
+        version: Version(2),
         lock_time: bitcoin::absolute::LockTime::ZERO,
         input: vec![TxIn {
             previous_output: OutPoint::new(*prev_txid, prev_vout),
@@ -73,7 +74,7 @@ pub fn create_transfer_transaction(prev_txid: &Txid, prev_vout: u32) -> Transact
             witness: Witness::new(),
         }],
         output: vec![TxOut {
-            value: 10000,
+            value: Amount::from_sat(10000),
             script_pubkey: ScriptBuf::new(),
         }],
     }
@@ -85,7 +86,7 @@ pub fn create_transfer_transaction_to_address(
     to_address: &Address<NetworkChecked>,
 ) -> Transaction {
     Transaction {
-        version: 2,
+        version: Version(2),
         lock_time: bitcoin::absolute::LockTime::ZERO,
         input: vec![TxIn {
             previous_output,
@@ -94,7 +95,7 @@ pub fn create_transfer_transaction_to_address(
             witness: Witness::new(),
         }],
         output: vec![TxOut {
-            value: 10000,
+            value: Amount::from_sat(10000),
             script_pubkey: to_address.script_pubkey(),
         }],
     }
@@ -103,7 +104,7 @@ pub fn create_transfer_transaction_to_address(
 /// Create a reveal transaction that spends from a commit transaction
 pub fn create_reveal_transaction(commit_txid: &Txid, witness: Witness) -> Transaction {
     Transaction {
-        version: 2,
+        version: Version(2),
         lock_time: bitcoin::absolute::LockTime::ZERO,
         input: vec![TxIn {
             previous_output: OutPoint::new(*commit_txid, 0),
@@ -112,7 +113,7 @@ pub fn create_reveal_transaction(commit_txid: &Txid, witness: Witness) -> Transa
             witness,
         }],
         output: vec![TxOut {
-            value: 10000,
+            value: Amount::from_sat(10000),
             script_pubkey: ScriptBuf::new(),
         }],
     }
@@ -129,11 +130,11 @@ pub fn create_multi_inscription_transaction(commit_txid: &Txid, witnesses: Vec<W
         }
     }).collect();
     Transaction {
-        version: 2,
+        version: Version(2),
         lock_time: bitcoin::absolute::LockTime::ZERO,
         input: inputs,
         output: vec![TxOut {
-            value: 10000,
+            value: Amount::from_sat(10000),
             script_pubkey: ScriptBuf::new(),
         }],
     }
@@ -142,7 +143,7 @@ pub fn create_multi_inscription_transaction(commit_txid: &Txid, witnesses: Vec<W
 /// Create a basic test transaction
 pub fn create_test_transaction() -> Transaction {
     Transaction {
-        version: 2,
+        version: Version(2),
         lock_time: bitcoin::absolute::LockTime::ZERO,
         input: vec![TxIn {
             previous_output: OutPoint::null(),
@@ -151,7 +152,7 @@ pub fn create_test_transaction() -> Transaction {
             witness: Witness::new(),
         }],
         output: vec![TxOut {
-            value: 5_000_000_000,
+            value: Amount::from_sat(5_000_000_000),
             script_pubkey: ScriptBuf::new(),
         }],
     }

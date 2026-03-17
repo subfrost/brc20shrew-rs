@@ -23,7 +23,7 @@ pub fn configure_network() {
 
 /// Get a deterministic test address for the regtest network
 pub fn get_test_address(index: u8) -> Address<bitcoin::address::NetworkChecked> {
-    use bitcoin::key::Secp256k1;
+    use bitcoin::key::{Secp256k1, CompressedPublicKey};
     use bitcoin::secp256k1::SecretKey;
     use bitcoin::PrivateKey;
     use bitcoin::PublicKey;
@@ -34,6 +34,7 @@ pub fn get_test_address(index: u8) -> Address<bitcoin::address::NetworkChecked> 
     let secret_key = SecretKey::from_slice(&key_data).unwrap();
     let private_key = PrivateKey::new(secret_key, Network::Regtest);
     let public_key = PublicKey::from_private_key(&secp, &private_key);
+    let compressed = CompressedPublicKey::try_from(public_key).unwrap();
 
-    Address::p2wpkh(&public_key, Network::Regtest).unwrap()
+    Address::p2wpkh(&compressed, Network::Regtest)
 }

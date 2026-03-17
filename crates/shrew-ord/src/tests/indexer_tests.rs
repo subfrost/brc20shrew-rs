@@ -216,7 +216,7 @@ fn test_index_inscription_metadata_stored() {
     let metadata = b"\xa1\x64test\x63val"; // CBOR
     let witness = create_inscription_envelope_with_metadata(b"text/plain", body, Some(metadata));
     let tx = bitcoin::Transaction {
-        version: 1,
+        version: bitcoin::transaction::Version(1),
         lock_time: bitcoin::absolute::LockTime::ZERO,
         input: vec![bitcoin::TxIn {
             previous_output: bitcoin::OutPoint {
@@ -231,7 +231,7 @@ fn test_index_inscription_metadata_stored() {
             witness,
         }],
         output: vec![bitcoin::TxOut {
-            value: 100_000_000,
+            value: bitcoin::Amount::from_sat(100_000_000),
             script_pubkey: bitcoin::ScriptBuf::new(),
         }],
     };
@@ -385,7 +385,7 @@ fn test_index_charm_unbound() {
     let mut block = create_block_with_coinbase_tx(100);
     // Put inscription in a non-coinbase tx so it's not doubly cursed
     let tx = bitcoin::Transaction {
-        version: 1,
+        version: bitcoin::transaction::Version(1),
         lock_time: bitcoin::absolute::LockTime::ZERO,
         input: vec![bitcoin::TxIn {
             previous_output: bitcoin::OutPoint {
@@ -400,7 +400,7 @@ fn test_index_charm_unbound() {
             witness,
         }],
         output: vec![bitcoin::TxOut {
-            value: 100_000_000,
+            value: bitcoin::Amount::from_sat(100_000_000),
             script_pubkey: bitcoin::ScriptBuf::new(),
         }],
     };

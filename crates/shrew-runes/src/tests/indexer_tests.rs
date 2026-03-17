@@ -15,7 +15,7 @@ fn make_runestone_tx_with_nonce(runestone: &Runestone, nonce: u32) -> Transactio
     let address = get_test_address(0);
     let script_pubkey = runestone.encipher();
     Transaction {
-        version: 2,
+        version: bitcoin::transaction::Version(2),
         lock_time: bitcoin::absolute::LockTime::from_consensus(nonce),
         input: vec![TxIn {
             previous_output: OutPoint::null(),
@@ -24,8 +24,8 @@ fn make_runestone_tx_with_nonce(runestone: &Runestone, nonce: u32) -> Transactio
             witness: Witness::new(),
         }],
         output: vec![
-            TxOut { value: 10000, script_pubkey: address.script_pubkey() },
-            TxOut { value: 0, script_pubkey },
+            TxOut { value: bitcoin::Amount::from_sat(10000), script_pubkey: address.script_pubkey() },
+            TxOut { value: bitcoin::Amount::ZERO, script_pubkey },
         ],
     }
 }
@@ -455,7 +455,7 @@ fn make_edict_tx(prev_outpoint: OutPoint, edicts: Vec<Edict>) -> Transaction {
     };
     let script_pubkey = edict_runestone.encipher();
     Transaction {
-        version: 2,
+        version: bitcoin::transaction::Version(2),
         lock_time: bitcoin::absolute::LockTime::ZERO,
         input: vec![TxIn {
             previous_output: prev_outpoint,
@@ -464,8 +464,8 @@ fn make_edict_tx(prev_outpoint: OutPoint, edicts: Vec<Edict>) -> Transaction {
             witness: Witness::new(),
         }],
         output: vec![
-            TxOut { value: 10000, script_pubkey: address.script_pubkey() },
-            TxOut { value: 0, script_pubkey },
+            TxOut { value: bitcoin::Amount::from_sat(10000), script_pubkey: address.script_pubkey() },
+            TxOut { value: bitcoin::Amount::ZERO, script_pubkey },
         ],
     }
 }
@@ -650,7 +650,7 @@ fn test_collect_input_runes() {
     let simple_runestone = Runestone { ..Default::default() };
     let script_pubkey = simple_runestone.encipher();
     let spend_tx = Transaction {
-        version: 2,
+        version: bitcoin::transaction::Version(2),
         lock_time: bitcoin::absolute::LockTime::ZERO,
         input: vec![TxIn {
             previous_output: premine_outpoint,
@@ -659,8 +659,8 @@ fn test_collect_input_runes() {
             witness: Witness::new(),
         }],
         output: vec![
-            TxOut { value: 10000, script_pubkey: address.script_pubkey() },
-            TxOut { value: 0, script_pubkey },
+            TxOut { value: bitcoin::Amount::from_sat(10000), script_pubkey: address.script_pubkey() },
+            TxOut { value: bitcoin::Amount::ZERO, script_pubkey },
         ],
     };
 

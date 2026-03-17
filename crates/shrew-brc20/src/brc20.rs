@@ -124,7 +124,7 @@ impl Brc20Indexer {
 
     fn process_brc20_inscriptions(&self, tx: &Transaction, network: Network, height: u32) {
         for (input_idx, _input) in tx.input.iter().enumerate() {
-            let inscription_id = InscriptionId::new(tx.txid(), input_idx as u32);
+            let inscription_id = InscriptionId::new(tx.compute_txid(), input_idx as u32);
             let seq_bytes = INSCRIPTION_ID_TO_SEQUENCE.select(&inscription_id.to_bytes()).get();
             if seq_bytes.is_empty() { continue; }
 

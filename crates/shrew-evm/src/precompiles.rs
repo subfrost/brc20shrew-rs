@@ -15,7 +15,7 @@ use bitcoin::blockdata::script::Builder;
 use bitcoin::consensus::deserialize;
 use bitcoin::key::UntweakedPublicKey;
 use bitcoin::taproot::TaprootBuilder;
-use bitcoin::{ScriptBuf, Transaction};
+use bitcoin::{Amount, ScriptBuf, Transaction};
 use bitcoin_hashes::Hash;
 use metashrew_support::index_pointer::KeyValuePointer;
 use revm::primitives::{Address, B256};
@@ -302,7 +302,7 @@ pub fn btc_tx_details(input: &[u8], gas_limit: u64, current_height: u32) -> Prec
             if let Some((prev_tx, _)) = lookup_tx(prev_txid.as_byte_array()) {
                 if let Some(prev_output) = prev_tx.output.get(prev_vout as usize) {
                     vin_scripts.push(prev_output.script_pubkey.as_bytes().to_vec());
-                    vin_values.push(prev_output.value);
+                    vin_values.push(prev_output.value.to_sat());
                 } else {
                     vin_scripts.push(vec![]);
                     vin_values.push(0);
@@ -319,7 +319,7 @@ pub fn btc_tx_details(input: &[u8], gas_limit: u64, current_height: u32) -> Prec
     let mut vout_values: Vec<u64> = Vec::new();
     for txout in &tx.output {
         vout_scripts.push(txout.script_pubkey.as_bytes().to_vec());
-        vout_values.push(txout.value);
+        vout_values.push(txout.value.to_sat());
     }
 
     // ABI-encode the response as a tuple of 7 elements
@@ -427,7 +427,7 @@ pub fn last_sat_location(input: &[u8], gas_limit: u64) -> PrecompileResult {
     }
 
     // Validate sat within output value
-    let output_value = tx.output[vout as usize].value;
+    let output_value = tx.output[vout as usize].value.to_sat();
     if sat >= output_value {
         return PrecompileResult { success: false, gas_used: GAS_BTC_RPC_CALL, output: vec![] };
     }
@@ -438,7 +438,7 @@ pub fn last_sat_location(input: &[u8], gas_limit: u64) -> PrecompileResult {
     // Calculate absolute sat position through outputs
     let mut total_vout_sats: u64 = 0;
     for i in 0..vout as usize {
-        total_vout_sats += tx.output[i].value;
+        total_vout_sats += tx.output[i].value.to_sat();
     }
     total_vout_sats += sat;
 
@@ -464,7 +464,7 @@ pub fn last_sat_location(input: &[u8], gas_limit: u64) -> PrecompileResult {
         let prev_output_value = if let Some((prev_tx, _)) = lookup_tx(prev_txid.as_byte_array()) {
             if let Some(prev_out) = prev_tx.output.get(prev_vout as usize) {
                 old_pkscript = prev_out.script_pubkey.as_bytes().to_vec();
-                prev_out.value
+                prev_out.value.to_sat()
             } else {
                 0
             }
@@ -613,7 +613,7 @@ pub fn get_locked_pkscript(input: &[u8], gas_limit: u64) -> PrecompileResult {
 
     // Get the P2TR script pubkey (OP_1 <32-byte-tweaked-key>)
     let output_key = taproot_spend_info.output_key();
-    let p2tr_script = ScriptBuf::new_v1_p2tr_tweaked(output_key);
+    let p2tr_script = ScriptBuf::new_p2tr_tweaked(output_key);
     let result_bytes = p2tr_script.into_bytes();
 
     // ABI-encode as bytes: offset (32) + length (32) + data (padded to 32)

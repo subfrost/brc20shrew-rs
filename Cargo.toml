@@ -33,9 +33,12 @@ sha2 = "0.10"
 regex = "1"
 
 # Bitcoin
-bitcoin = { version = "0.30.2", features = ["serde"] }
-bitcoin_hashes = "0.12"
-ordinals = "0.0.8"
+bitcoin = { version = "0.32", features = ["serde"] }
+bitcoin_hashes = "0.14"
+ordinals = "0.0.15"
+
+# BIP322
+bip322 = "0.0.10"
 
 # Protobuf
 prost = "0.12.6"

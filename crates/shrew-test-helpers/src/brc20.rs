@@ -64,7 +64,7 @@ pub fn create_brc20_transfer_claim_block(
     inscribe_tx: &Transaction,
     to_address: &Address<NetworkChecked>,
 ) -> (Block, Transaction) {
-    let prev_out = OutPoint::new(inscribe_tx.txid(), 0);
+    let prev_out = OutPoint::new(inscribe_tx.compute_txid(), 0);
     let tx = create_transfer_transaction_to_address(prev_out, to_address);
     let block = create_block_with_txs(vec![create_coinbase_transaction(3), tx.clone()]);
     (block, tx)

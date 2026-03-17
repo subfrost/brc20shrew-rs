@@ -85,7 +85,7 @@ impl RuneIndexer {
 
     fn index_transaction(&self, tx: &Transaction, tx_index: u32, height: u32) -> Vec<RuneEvent> {
         let mut events = Vec::new();
-        let txid = *tx.txid().as_byte_array();
+        let txid = *tx.compute_txid().as_byte_array();
 
         // Decipher the runestone from the transaction
         let artifact = Runestone::decipher(tx);
@@ -217,7 +217,7 @@ impl RuneIndexer {
                 // Store output balance sheets and emit events
                 for (vout, sheet) in &output_sheets {
                     if sheet.is_empty() { continue; }
-                    let outpoint = OutPoint { txid: tx.txid(), vout: *vout };
+                    let outpoint = OutPoint { txid: tx.compute_txid(), vout: *vout };
                     let outpoint_bytes: Vec<u8> = outpoint.txid.as_byte_array().iter()
                         .chain(outpoint.vout.to_le_bytes().iter()).copied().collect();
                     RUNE_BALANCES_BY_OUTPOINT.select(&outpoint_bytes).set(Arc::new(sheet.to_bytes()));
@@ -300,7 +300,7 @@ impl RuneIndexer {
             mints: 0,
             supply: premine,
             etching_height: height,
-            etching_txid: *tx.txid().as_byte_array(),
+            etching_txid: *tx.compute_txid().as_byte_array(),
         };
 
         // Store the rune entry
@@ -311,7 +311,7 @@ impl RuneIndexer {
         RUNE_NAME_TO_ID.select(&name.to_uppercase().as_bytes().to_vec()).set(Arc::new(rune_id.to_bytes()));
 
         // Store etching -> rune id mapping
-        let etching_bytes = tx.txid().as_byte_array().to_vec();
+        let etching_bytes = tx.compute_txid().as_byte_array().to_vec();
         ETCHING_TO_RUNE_ID.select(&etching_bytes).set(Arc::new(rune_id.to_bytes()));
         RUNE_ID_TO_ETCHING.select(&rune_id.to_bytes()).set(Arc::new(etching_bytes));
 

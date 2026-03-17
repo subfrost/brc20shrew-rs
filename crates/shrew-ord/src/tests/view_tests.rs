@@ -151,7 +151,7 @@ fn test_view_get_metadata() {
     let metadata = b"\xa1\x63key\x63val";
     let witness = create_inscription_envelope_with_metadata(b"text/plain", b"body", Some(metadata));
     let tx = bitcoin::Transaction {
-        version: 1,
+        version: bitcoin::transaction::Version(1),
         lock_time: bitcoin::absolute::LockTime::ZERO,
         input: vec![bitcoin::TxIn {
             previous_output: bitcoin::OutPoint {
@@ -166,7 +166,7 @@ fn test_view_get_metadata() {
             witness,
         }],
         output: vec![bitcoin::TxOut {
-            value: 100_000_000,
+            value: bitcoin::Amount::from_sat(100_000_000),
             script_pubkey: bitcoin::ScriptBuf::new(),
         }],
     };
@@ -281,7 +281,7 @@ fn test_view_get_children() {
         &parent_id_str,
     );
     let child_tx = bitcoin::Transaction {
-        version: 1,
+        version: bitcoin::transaction::Version(1),
         lock_time: bitcoin::absolute::LockTime::ZERO,
         input: vec![bitcoin::TxIn {
             previous_output: bitcoin::OutPoint {
@@ -296,7 +296,7 @@ fn test_view_get_children() {
             witness: child_witness,
         }],
         output: vec![bitcoin::TxOut {
-            value: 100_000_000,
+            value: bitcoin::Amount::from_sat(100_000_000),
             script_pubkey: bitcoin::ScriptBuf::new(),
         }],
     };
@@ -343,7 +343,7 @@ fn test_view_get_parents() {
         &parent_id_str,
     );
     let child_tx = bitcoin::Transaction {
-        version: 1,
+        version: bitcoin::transaction::Version(1),
         lock_time: bitcoin::absolute::LockTime::ZERO,
         input: vec![bitcoin::TxIn {
             previous_output: bitcoin::OutPoint {
@@ -358,7 +358,7 @@ fn test_view_get_parents() {
             witness: child_witness,
         }],
         output: vec![bitcoin::TxOut {
-            value: 100_000_000,
+            value: bitcoin::Amount::from_sat(100_000_000),
             script_pubkey: bitcoin::ScriptBuf::new(),
         }],
     };

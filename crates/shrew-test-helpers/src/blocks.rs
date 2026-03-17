@@ -1,4 +1,4 @@
-use bitcoin::{Block, Transaction, TxIn, TxOut, OutPoint, Witness, ScriptBuf, Sequence};
+use bitcoin::{Amount, Block, Transaction, TxIn, TxOut, OutPoint, Witness, ScriptBuf, Sequence};
 use bitcoin::blockdata::block::{Header, Version as BlockVersion};
 use bitcoin::BlockHash;
 use std::str::FromStr;
@@ -16,12 +16,12 @@ pub fn create_coinbase_transaction(height: u32) -> Transaction {
         witness: Witness::new(),
     };
     let coinbase_output = TxOut {
-        value: 50_000_000,
+        value: Amount::from_sat(50_000_000),
         script_pubkey,
     };
     let locktime = bitcoin::absolute::LockTime::from_height(height).unwrap_or(bitcoin::absolute::LockTime::ZERO);
     Transaction {
-        version: 2,
+        version: bitcoin::transaction::Version(2),
         lock_time: locktime,
         input: vec![coinbase_input],
         output: vec![coinbase_output],

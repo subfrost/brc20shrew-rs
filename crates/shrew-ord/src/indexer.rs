@@ -73,7 +73,7 @@ impl InscriptionIndexer {
 
         // Index all transactions for BRC20-prog precompile lookups
         for tx in &block.txdata {
-            let txid_bytes = tx.txid().as_byte_array().to_vec();
+            let txid_bytes = tx.compute_txid().as_byte_array().to_vec();
             let raw_tx = serialize(tx);
             TXID_TO_RAW_TX.select(&txid_bytes).set(Arc::new(raw_tx));
             TXID_TO_BLOCK_HEIGHT.select(&txid_bytes).set(Arc::new(height.to_le_bytes().to_vec()));
@@ -109,7 +109,7 @@ impl InscriptionIndexer {
         tx_index: usize,
         sat_ranges: &SatRanges,
     ) -> Result<TransactionIndexResult, IndexError> {
-        let mut result = TransactionIndexResult::new(tx.txid());
+        let mut result = TransactionIndexResult::new(tx.compute_txid());
 
         let envelopes = parse_inscriptions_from_transaction(tx)
             .map_err(|_| IndexError::ParseError)?;
@@ -133,7 +133,7 @@ impl InscriptionIndexer {
         envelope: &Envelope,
         sat_ranges: &SatRanges,
     ) -> Result<InscriptionIndexResult, IndexError> {
-        let inscription_id = InscriptionId::new(tx.txid(), envelope.input as u32);
+        let inscription_id = InscriptionId::new(tx.compute_txid(), envelope.input as u32);
 
         if !INSCRIPTION_ID_TO_SEQUENCE.select(&inscription_id.to_bytes()).get().is_empty() {
             return Err(IndexError::DuplicateInscription);
@@ -244,7 +244,7 @@ impl InscriptionIndexer {
 
     fn calculate_satpoint(&self, tx: &Transaction, envelope: &Envelope, _sat_ranges: &SatRanges) -> Result<SatPoint, IndexError> {
         let vout = envelope.payload.pointer_value().unwrap_or(0) as u32;
-        let outpoint = OutPoint { txid: tx.txid(), vout };
+        let outpoint = OutPoint { txid: tx.compute_txid(), vout };
         Ok(SatPoint::new(outpoint, 0))
     }
 
@@ -267,7 +267,7 @@ impl SatRanges {
 
     pub fn process_transaction(&mut self, tx: &Transaction, _is_coinbase: bool) -> Result<(), IndexError> {
         for (vout, _output) in tx.output.iter().enumerate() {
-            let outpoint = OutPoint { txid: tx.txid(), vout: vout as u32 };
+            let outpoint = OutPoint { txid: tx.compute_txid(), vout: vout as u32 };
             self.ranges.insert(outpoint, (0, 0));
         }
         Ok(())

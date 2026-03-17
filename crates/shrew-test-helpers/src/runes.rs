@@ -1,4 +1,4 @@
-use bitcoin::{Block, Transaction, TxIn, TxOut, OutPoint, Witness, ScriptBuf, Sequence};
+use bitcoin::{Amount, Block, Transaction, TxIn, TxOut, OutPoint, Witness, ScriptBuf, Sequence};
 use ordinals::{Runestone, Etching, Rune, Terms, Edict, RuneId as OrdRuneId};
 use shrew_runes::balance_sheet::{BalanceSheet, RuneId};
 use shrew_runes::tables::RUNE_BALANCES_BY_OUTPOINT;
@@ -14,7 +14,7 @@ pub fn create_runestone_tx(runestone: &Runestone) -> Transaction {
     let script_pubkey = runestone.encipher();
 
     Transaction {
-        version: 2,
+        version: bitcoin::transaction::Version(2),
         lock_time: bitcoin::absolute::LockTime::ZERO,
         input: vec![TxIn {
             previous_output: OutPoint::null(),
@@ -24,11 +24,11 @@ pub fn create_runestone_tx(runestone: &Runestone) -> Transaction {
         }],
         output: vec![
             TxOut {
-                value: 10000,
+                value: Amount::from_sat(10000),
                 script_pubkey: address.script_pubkey(),
             },
             TxOut {
-                value: 0,
+                value: Amount::ZERO,
                 script_pubkey,
             },
         ],

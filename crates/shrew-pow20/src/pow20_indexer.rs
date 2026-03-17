@@ -106,7 +106,7 @@ impl Pow20Indexer {
             // Get owner address from first output of the transaction
             // We need the tx - find it in the block
             let owner = block.txdata.iter()
-                .find(|tx| tx.txid() == entry.id.txid)
+                .find(|tx| tx.compute_txid() == entry.id.txid)
                 .and_then(|tx| tx.output.get(0))
                 .and_then(|out| get_address_from_txout(out, network))
                 .map(|a| a.to_string());
