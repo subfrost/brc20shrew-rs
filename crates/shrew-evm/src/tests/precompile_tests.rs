@@ -138,12 +138,149 @@ fn test_last_sat_location_placeholder() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn test_locked_pkscript_placeholder() {
+fn test_locked_pkscript_empty_input_fails() {
     let txid = B256::ZERO;
     let result = execute_precompile(&PRECOMPILE_LOCKED_PKSCRIPT, &[], 100_000, txid).unwrap();
-    assert!(result.success, "Locked pkscript stub should succeed");
+    assert!(!result.success, "Locked pkscript with empty input should fail (insufficient ABI data)");
+}
+
+// ---------------------------------------------------------------------------
+// Locked pkscript precompile — valid ABI input tests
+// ---------------------------------------------------------------------------
+
+/// Build a valid ABI-encoded input for getLockedPkscript(bytes pkscript, uint256 lock_block_count)
+fn build_locked_pkscript_input(pkscript: &[u8], lock_block_count: u64) -> Vec<u8> {
+    let mut input = Vec::new();
+    // 4-byte function selector (arbitrary, precompile ignores it)
+    input.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]);
+    // offset to pkscript data (0x40 = 64 bytes from start of data)
+    let mut offset = [0u8; 32];
+    offset[31] = 0x40;
+    input.extend_from_slice(&offset);
+    // lock_block_count as uint256 (big-endian)
+    let mut lock = [0u8; 32];
+    lock[24..32].copy_from_slice(&lock_block_count.to_be_bytes());
+    input.extend_from_slice(&lock);
+    // pkscript length as uint256
+    let mut len = [0u8; 32];
+    len[24..32].copy_from_slice(&(pkscript.len() as u64).to_be_bytes());
+    input.extend_from_slice(&len);
+    // pkscript data (padded to 32 bytes)
+    let padded_len = (pkscript.len() + 31) / 32 * 32;
+    let mut padded = vec![0u8; padded_len];
+    padded[..pkscript.len()].copy_from_slice(pkscript);
+    input.extend_from_slice(&padded);
+    input
+}
+
+#[test]
+fn test_locked_pkscript_valid_small_lock() {
+    let txid = B256::ZERO;
+    // Simple 33-byte compressed pubkey as pkscript
+    let pkscript = vec![0x02; 33];
+    let input = build_locked_pkscript_input(&pkscript, 6);
+    let result = execute_precompile(&PRECOMPILE_LOCKED_PKSCRIPT, &input, 100_000, txid).unwrap();
+    assert!(result.success, "Should succeed with valid input and lock=6");
     assert_eq!(result.gas_used, GAS_LOCKED_PKSCRIPT);
-    assert_eq!(result.output.len(), 32, "Output should be 32 bytes");
+    // Output is ABI-encoded bytes: offset(32) + length(32) + data
+    assert!(result.output.len() >= 64, "Output should contain ABI header");
+    // P2TR script should be 34 bytes (OP_1 <32-byte-key>)
+    let data_len = u64::from_be_bytes(result.output[56..64].try_into().unwrap()) as usize;
+    assert_eq!(data_len, 34, "P2TR script should be 34 bytes");
+    // First byte should be OP_1 (0x51) for P2TR
+    assert_eq!(result.output[64], 0x51, "P2TR script should start with OP_1");
+    // Second byte should be 0x20 (push 32 bytes)
+    assert_eq!(result.output[65], 0x20, "P2TR script should push 32-byte key");
+}
+
+#[test]
+fn test_locked_pkscript_lock_1() {
+    let txid = B256::ZERO;
+    let pkscript = vec![0x03; 33];
+    let input = build_locked_pkscript_input(&pkscript, 1);
+    let result = execute_precompile(&PRECOMPILE_LOCKED_PKSCRIPT, &input, 100_000, txid).unwrap();
+    assert!(result.success, "lock_block_count=1 should succeed");
+}
+
+#[test]
+fn test_locked_pkscript_lock_16() {
+    let txid = B256::ZERO;
+    let pkscript = vec![0x03; 33];
+    let input = build_locked_pkscript_input(&pkscript, 16);
+    let result = execute_precompile(&PRECOMPILE_LOCKED_PKSCRIPT, &input, 100_000, txid).unwrap();
+    assert!(result.success, "lock_block_count=16 should succeed (OP_16)");
+}
+
+#[test]
+fn test_locked_pkscript_lock_17() {
+    let txid = B256::ZERO;
+    let pkscript = vec![0x03; 33];
+    let input = build_locked_pkscript_input(&pkscript, 17);
+    let result = execute_precompile(&PRECOMPILE_LOCKED_PKSCRIPT, &input, 100_000, txid).unwrap();
+    assert!(result.success, "lock_block_count=17 should succeed (first value beyond OP_16)");
+}
+
+#[test]
+fn test_locked_pkscript_lock_max() {
+    let txid = B256::ZERO;
+    let pkscript = vec![0x03; 33];
+    let input = build_locked_pkscript_input(&pkscript, 65535);
+    let result = execute_precompile(&PRECOMPILE_LOCKED_PKSCRIPT, &input, 100_000, txid).unwrap();
+    assert!(result.success, "lock_block_count=65535 should succeed (max valid)");
+}
+
+#[test]
+fn test_locked_pkscript_lock_zero_rejected() {
+    let txid = B256::ZERO;
+    let pkscript = vec![0x03; 33];
+    let input = build_locked_pkscript_input(&pkscript, 0);
+    let result = execute_precompile(&PRECOMPILE_LOCKED_PKSCRIPT, &input, 100_000, txid).unwrap();
+    assert!(!result.success, "lock_block_count=0 should fail");
+}
+
+#[test]
+fn test_locked_pkscript_lock_too_large_rejected() {
+    let txid = B256::ZERO;
+    let pkscript = vec![0x03; 33];
+    let input = build_locked_pkscript_input(&pkscript, 65536);
+    let result = execute_precompile(&PRECOMPILE_LOCKED_PKSCRIPT, &input, 100_000, txid).unwrap();
+    assert!(!result.success, "lock_block_count=65536 should fail (> 65535)");
+}
+
+#[test]
+fn test_locked_pkscript_insufficient_gas() {
+    let txid = B256::ZERO;
+    let pkscript = vec![0x03; 33];
+    let input = build_locked_pkscript_input(&pkscript, 6);
+    let result = execute_precompile(&PRECOMPILE_LOCKED_PKSCRIPT, &input, 100, txid).unwrap();
+    assert!(!result.success, "Should fail with insufficient gas");
+}
+
+#[test]
+fn test_locked_pkscript_different_locks_produce_different_outputs() {
+    let txid = B256::ZERO;
+    let pkscript = vec![0x03; 33];
+    let input6 = build_locked_pkscript_input(&pkscript, 6);
+    let input100 = build_locked_pkscript_input(&pkscript, 100);
+    let result6 = execute_precompile(&PRECOMPILE_LOCKED_PKSCRIPT, &input6, 100_000, txid).unwrap();
+    let result100 = execute_precompile(&PRECOMPILE_LOCKED_PKSCRIPT, &input100, 100_000, txid).unwrap();
+    assert!(result6.success && result100.success);
+    assert_ne!(result6.output, result100.output,
+        "Different lock counts should produce different P2TR outputs");
+}
+
+#[test]
+fn test_locked_pkscript_different_pkscripts_produce_different_outputs() {
+    let txid = B256::ZERO;
+    let pk1 = vec![0x02; 33];
+    let pk2 = vec![0x03; 33];
+    let input1 = build_locked_pkscript_input(&pk1, 6);
+    let input2 = build_locked_pkscript_input(&pk2, 6);
+    let result1 = execute_precompile(&PRECOMPILE_LOCKED_PKSCRIPT, &input1, 100_000, txid).unwrap();
+    let result2 = execute_precompile(&PRECOMPILE_LOCKED_PKSCRIPT, &input2, 100_000, txid).unwrap();
+    assert!(result1.success && result2.success);
+    assert_ne!(result1.output, result2.output,
+        "Different pkscripts should produce different P2TR outputs");
 }
 
 // ---------------------------------------------------------------------------

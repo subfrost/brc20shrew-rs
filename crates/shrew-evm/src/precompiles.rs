@@ -10,6 +10,11 @@
 //!   0xFB - Get locked pkscript
 //!   0xFA - Get OP_RETURN transaction ID
 
+use bitcoin::blockdata::opcodes;
+use bitcoin::blockdata::script::Builder;
+use bitcoin::key::UntweakedPublicKey;
+use bitcoin::taproot::TaprootBuilder;
+use bitcoin::ScriptBuf;
 use revm::primitives::{Address, B256};
 
 /// Precompile address for BIP322 verify
@@ -145,14 +150,130 @@ fn last_sat_location(_input: &[u8], gas_limit: u64) -> PrecompileResult {
 /// Get locked pkscript precompile (0xFB).
 ///
 /// Input ABI: getLockedPkscript(bytes pkscript, uint256 lock_block_count) -> bytes
-fn get_locked_pkscript(_input: &[u8], gas_limit: u64) -> PrecompileResult {
+///
+/// Builds a P2TR output script with a CSV timelock wrapping the given pkscript.
+fn get_locked_pkscript(input: &[u8], gas_limit: u64) -> PrecompileResult {
     if gas_limit < GAS_LOCKED_PKSCRIPT {
         return PrecompileResult { success: false, gas_used: gas_limit, output: vec![] };
     }
 
-    // Placeholder - returns empty pkscript
-    let output = vec![0u8; 32];
+    let fail = || PrecompileResult { success: false, gas_used: GAS_LOCKED_PKSCRIPT, output: vec![] };
+
+    // Need at least 4 (selector) + 32 (offset) + 32 (lock_block_count) = 68 bytes
+    if input.len() < 68 {
+        return fail();
+    }
+
+    // Skip 4-byte function selector
+    let data = &input[4..];
+
+    // Decode pkscript offset (first 32 bytes of data)
+    let pkscript_offset = {
+        let mut buf = [0u8; 32];
+        buf.copy_from_slice(&data[0..32]);
+        // offset is in bytes from start of data area
+        let offset = u256_to_usize(buf);
+        match offset {
+            Some(o) => o,
+            None => return fail(),
+        }
+    };
+
+    // Decode lock_block_count (second 32 bytes of data), use as u64
+    let lock_block_count = {
+        let mut buf = [0u8; 32];
+        buf.copy_from_slice(&data[32..64]);
+        // Take low 8 bytes as u64
+        let val = u64::from_be_bytes(buf[24..32].try_into().unwrap());
+        val
+    };
+
+    // Validate lock_block_count: 1 <= lock_block_count <= 65535
+    if lock_block_count < 1 || lock_block_count > 65535 {
+        return fail();
+    }
+
+    // Decode pkscript bytes from the dynamic offset
+    if data.len() < pkscript_offset + 32 {
+        return fail();
+    }
+    let pkscript_len = {
+        let mut buf = [0u8; 32];
+        buf.copy_from_slice(&data[pkscript_offset..pkscript_offset + 32]);
+        match u256_to_usize(buf) {
+            Some(l) => l,
+            None => return fail(),
+        }
+    };
+    if data.len() < pkscript_offset + 32 + pkscript_len {
+        return fail();
+    }
+    let pkscript = &data[pkscript_offset + 32..pkscript_offset + 32 + pkscript_len];
+
+    // Build the lock script:
+    // <lock_block_count> OP_CSV OP_DROP <pkscript_bytes> OP_CHECKSIG
+    let lock_script = {
+        let builder = Builder::new()
+            .push_int(lock_block_count as i64)
+            .push_opcode(opcodes::all::OP_CSV)
+            .push_opcode(opcodes::all::OP_DROP);
+        let mut script_bytes = builder.into_script().into_bytes();
+        script_bytes.extend_from_slice(pkscript);
+        script_bytes.push(opcodes::all::OP_CHECKSIG.to_u8());
+        ScriptBuf::from(script_bytes)
+    };
+
+    // Unspendable internal key (nothing-up-my-sleeve point)
+    let internal_key_bytes: [u8; 32] = [
+        0x50, 0x92, 0x9b, 0x74, 0xc1, 0xa0, 0x49, 0x54,
+        0xb7, 0x8b, 0x4b, 0x60, 0x35, 0xe9, 0x7a, 0x5e,
+        0x07, 0x8a, 0x5a, 0x0f, 0x28, 0xec, 0x96, 0xd5,
+        0x47, 0xbf, 0xee, 0x9a, 0xce, 0x80, 0x3a, 0xc0,
+    ];
+    let internal_key = match UntweakedPublicKey::from_slice(&internal_key_bytes) {
+        Ok(k) => k,
+        Err(_) => return fail(),
+    };
+
+    // Build taproot with one leaf at depth 0
+    let secp = bitcoin::secp256k1::Secp256k1::verification_only();
+    let taproot_builder = TaprootBuilder::new()
+        .add_leaf(0, lock_script)
+        .expect("single leaf at depth 0 should not fail");
+    let taproot_spend_info = match taproot_builder.finalize(&secp, internal_key) {
+        Ok(info) => info,
+        Err(_) => return fail(),
+    };
+
+    // Get the P2TR script pubkey (OP_1 <32-byte-tweaked-key>)
+    let output_key = taproot_spend_info.output_key();
+    let p2tr_script = ScriptBuf::new_v1_p2tr_tweaked(output_key);
+    let result_bytes = p2tr_script.into_bytes();
+
+    // ABI-encode as bytes: offset (32) + length (32) + data (padded to 32)
+    let padded_len = (result_bytes.len() + 31) / 32 * 32;
+    let mut output = vec![0u8; 64 + padded_len];
+    // Offset to data (always 0x20 = 32)
+    output[31] = 0x20;
+    // Length of data
+    let len_bytes = (result_bytes.len() as u64).to_be_bytes();
+    output[56..64].copy_from_slice(&len_bytes);
+    // Data
+    output[64..64 + result_bytes.len()].copy_from_slice(&result_bytes);
+
     PrecompileResult { success: true, gas_used: GAS_LOCKED_PKSCRIPT, output }
+}
+
+/// Convert a big-endian 256-bit value to usize, returning None if it overflows.
+fn u256_to_usize(bytes: [u8; 32]) -> Option<usize> {
+    // Check that the high bytes are all zero
+    for &b in &bytes[..24] {
+        if b != 0 {
+            return None;
+        }
+    }
+    let val = u64::from_be_bytes(bytes[24..32].try_into().unwrap());
+    usize::try_from(val).ok()
 }
 
 /// Get OP_RETURN transaction ID precompile (0xFA).

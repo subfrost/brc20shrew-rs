@@ -14,6 +14,7 @@ pub fn call(request: &CallRequest) -> Result<CallResponse, String> {
 
     let to = Address::from_slice(&request.to);
     let mut evm = EVM::<MetashrewDB>::new();
+    evm.database(MetashrewDB);
     evm.env.tx.transact_to = TransactTo::Call(to);
     evm.env.tx.data = request.data.clone().into();
     evm.env.tx.gas_limit = u64::MAX;

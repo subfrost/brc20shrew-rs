@@ -10,6 +10,12 @@ pub const RUNES_ACTIVATION_HEIGHT: u32 = 840000;
 /// POW20 starting block (mainnet)
 pub const POW20_STARTING_BLOCK: u32 = 832486;
 
+/// BRC20 self-mint (5-byte ticker) activation height (mainnet)
+pub const BRC20_SELF_MINT_ENABLE_HEIGHT: u32 = 837090;
+
+/// BRC20-prog phase one (6-byte predeploy ticker) activation height (mainnet)
+pub const BRC20_PROG_PHASE_ONE_HEIGHT: u32 = 912690;
+
 /// BRC20-prog CANCUN -> PRAGUE hardfork block (mainnet)
 pub const BRC20_PROG_PRAGUE_HARDFORK: u32 = 923369;
 

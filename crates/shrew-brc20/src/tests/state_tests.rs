@@ -3,6 +3,8 @@ use crate::tables::{Brc20Tickers, Brc20Balances, Brc20TransferableInscriptions};
 use shrew_test_helpers::state::clear;
 use shrew_test_helpers::assertions::{assert_brc20_balance, assert_brc20_supply};
 
+const SCALE: u128 = 1_000_000_000_000_000_000u128; // 10^18
+
 // ---------------------------------------------------------------------------
 // Deploy tests
 // ---------------------------------------------------------------------------
@@ -13,9 +15,10 @@ fn test_deploy_creates_ticker() {
     let indexer = Brc20Indexer::new();
     let op = Brc20Operation::Deploy {
         ticker: "ordi".to_string(),
-        max_supply: 21_000_000,
-        limit_per_mint: 1000,
+        max_supply: 21_000_000 * SCALE,
+        limit_per_mint: 1000 * SCALE,
         decimals: 18,
+        self_mint: false,
     };
     indexer.process_operation(&op, "fake_inscription_id_0i0", "bc1qtest").unwrap();
 
@@ -23,8 +26,8 @@ fn test_deploy_creates_ticker() {
     assert!(data.is_some(), "Ticker 'ordi' should exist after deploy");
     let ticker: Ticker = serde_json::from_slice(&data.unwrap()).unwrap();
     assert_eq!(ticker.name, "ordi");
-    assert_eq!(ticker.max_supply, 21_000_000);
-    assert_eq!(ticker.limit_per_mint, 1000);
+    assert_eq!(ticker.max_supply, 21_000_000 * SCALE);
+    assert_eq!(ticker.limit_per_mint, 1000 * SCALE);
     assert_eq!(ticker.decimals, 18);
     assert_eq!(ticker.current_supply, 0);
     assert_eq!(ticker.deploy_inscription_id, "fake_inscription_id_0i0");
@@ -36,58 +39,56 @@ fn test_deploy_first_wins() {
     let indexer = Brc20Indexer::new();
     let op1 = Brc20Operation::Deploy {
         ticker: "ordi".to_string(),
-        max_supply: 21_000_000,
-        limit_per_mint: 1000,
+        max_supply: 21_000_000 * SCALE,
+        limit_per_mint: 1000 * SCALE,
         decimals: 18,
+        self_mint: false,
     };
     let op2 = Brc20Operation::Deploy {
         ticker: "ordi".to_string(),
-        max_supply: 99_999_999,
-        limit_per_mint: 5000,
+        max_supply: 99_999_999 * SCALE,
+        limit_per_mint: 5000 * SCALE,
         decimals: 8,
+        self_mint: false,
     };
     indexer.process_operation(&op1, "first_deploy_0i0", "bc1qfirst").unwrap();
     indexer.process_operation(&op2, "second_deploy_0i0", "bc1qsecond").unwrap();
 
     let data = Brc20Tickers::new().get("ordi").unwrap();
     let ticker: Ticker = serde_json::from_slice(&data).unwrap();
-    // First deploy should win: max_supply should be 21M, not 99M
-    assert_eq!(ticker.max_supply, 21_000_000);
+    assert_eq!(ticker.max_supply, 21_000_000 * SCALE);
     assert_eq!(ticker.deploy_inscription_id, "first_deploy_0i0");
 }
 
 #[test]
-fn test_deploy_case_insensitive_check() {
-    // In BRC20 v1, tickers are CASE-SENSITIVE.
-    // "ORDI" and "ordi" are different tickers.
+fn test_deploy_case_insensitive() {
+    // BRC-20 tickers are CASE-INSENSITIVE per OPI spec.
+    // "ORDI" and "ordi" refer to the same ticker.
     clear();
     let indexer = Brc20Indexer::new();
 
     let op_lower = Brc20Operation::Deploy {
         ticker: "ordi".to_string(),
-        max_supply: 21_000_000,
-        limit_per_mint: 1000,
+        max_supply: 21_000_000 * SCALE,
+        limit_per_mint: 1000 * SCALE,
         decimals: 18,
+        self_mint: false,
     };
     let op_upper = Brc20Operation::Deploy {
-        ticker: "ORDI".to_string(),
-        max_supply: 10_000_000,
-        limit_per_mint: 500,
+        ticker: "ordi".to_string(), // Already lowercase (parse_operation normalizes)
+        max_supply: 10_000_000 * SCALE,
+        limit_per_mint: 500 * SCALE,
         decimals: 8,
+        self_mint: false,
     };
     indexer.process_operation(&op_lower, "lower_0i0", "bc1qa").unwrap();
     indexer.process_operation(&op_upper, "upper_0i0", "bc1qb").unwrap();
 
-    // Both should exist independently since BRC20 tickers are case-sensitive
-    let lower_data = Brc20Tickers::new().get("ordi");
-    let upper_data = Brc20Tickers::new().get("ORDI");
-    assert!(lower_data.is_some(), "'ordi' ticker should exist");
-    assert!(upper_data.is_some(), "'ORDI' ticker should exist");
-
-    let lower: Ticker = serde_json::from_slice(&lower_data.unwrap()).unwrap();
-    let upper: Ticker = serde_json::from_slice(&upper_data.unwrap()).unwrap();
-    assert_eq!(lower.max_supply, 21_000_000);
-    assert_eq!(upper.max_supply, 10_000_000);
+    // Only the first deploy should exist
+    let data = Brc20Tickers::new().get("ordi");
+    assert!(data.is_some(), "'ordi' ticker should exist");
+    let ticker: Ticker = serde_json::from_slice(&data.unwrap()).unwrap();
+    assert_eq!(ticker.max_supply, 21_000_000 * SCALE, "First deploy should win");
 }
 
 // ---------------------------------------------------------------------------
@@ -98,23 +99,22 @@ fn test_deploy_case_insensitive_check() {
 fn test_mint_increases_supply() {
     clear();
     let indexer = Brc20Indexer::new();
-    // Deploy first
     let deploy = Brc20Operation::Deploy {
         ticker: "ordi".to_string(),
-        max_supply: 21_000_000,
-        limit_per_mint: 1000,
+        max_supply: 21_000_000 * SCALE,
+        limit_per_mint: 1000 * SCALE,
         decimals: 18,
+        self_mint: false,
     };
     indexer.process_operation(&deploy, "deploy_0i0", "bc1qowner").unwrap();
 
-    // Mint
     let mint = Brc20Operation::Mint {
         ticker: "ordi".to_string(),
-        amount: 500,
+        amount: 500 * SCALE,
     };
     indexer.process_operation(&mint, "mint_0i0", "bc1qowner").unwrap();
 
-    assert_brc20_supply("ordi", 500);
+    assert_brc20_supply("ordi", 500 * SCALE);
 }
 
 #[test]
@@ -123,19 +123,20 @@ fn test_mint_increases_balance() {
     let indexer = Brc20Indexer::new();
     let deploy = Brc20Operation::Deploy {
         ticker: "ordi".to_string(),
-        max_supply: 21_000_000,
-        limit_per_mint: 1000,
+        max_supply: 21_000_000 * SCALE,
+        limit_per_mint: 1000 * SCALE,
         decimals: 18,
+        self_mint: false,
     };
     indexer.process_operation(&deploy, "deploy_0i0", "bc1qowner").unwrap();
 
     let mint = Brc20Operation::Mint {
         ticker: "ordi".to_string(),
-        amount: 750,
+        amount: 750 * SCALE,
     };
     indexer.process_operation(&mint, "mint_0i0", "bc1qminter").unwrap();
 
-    assert_brc20_balance("bc1qminter", "ordi", 750, 750);
+    assert_brc20_balance("bc1qminter", "ordi", 750 * SCALE, 750 * SCALE);
 }
 
 #[test]
@@ -144,60 +145,57 @@ fn test_mint_exceeds_limit_rejected() {
     let indexer = Brc20Indexer::new();
     let deploy = Brc20Operation::Deploy {
         ticker: "ordi".to_string(),
-        max_supply: 21_000_000,
-        limit_per_mint: 1000,
+        max_supply: 21_000_000 * SCALE,
+        limit_per_mint: 1000 * SCALE,
         decimals: 18,
+        self_mint: false,
     };
     indexer.process_operation(&deploy, "deploy_0i0", "bc1qowner").unwrap();
 
-    // Try to mint more than limit_per_mint
     let mint = Brc20Operation::Mint {
         ticker: "ordi".to_string(),
-        amount: 1001,
+        amount: 1001 * SCALE,
     };
     indexer.process_operation(&mint, "mint_0i0", "bc1qminter").unwrap();
 
-    // Supply should remain 0 (mint was rejected)
     assert_brc20_supply("ordi", 0);
-    // Balance should not exist
     let balance = Brc20Balances::new().get("bc1qminter", "ordi");
     assert!(balance.is_none(), "Balance should not exist for rejected mint");
 }
 
 #[test]
-fn test_mint_exceeds_max_supply_rejected() {
+fn test_mint_exceeds_max_supply_clamped() {
     clear();
     let indexer = Brc20Indexer::new();
     let deploy = Brc20Operation::Deploy {
         ticker: "ordi".to_string(),
-        max_supply: 1000,
-        limit_per_mint: 800,
+        max_supply: 1000 * SCALE,
+        limit_per_mint: 800 * SCALE,
         decimals: 18,
+        self_mint: false,
     };
     indexer.process_operation(&deploy, "deploy_0i0", "bc1qowner").unwrap();
 
     // First mint of 800: OK
-    let mint1 = Brc20Operation::Mint { ticker: "ordi".to_string(), amount: 800 };
+    let mint1 = Brc20Operation::Mint { ticker: "ordi".to_string(), amount: 800 * SCALE };
     indexer.process_operation(&mint1, "mint1_0i0", "bc1qminter").unwrap();
-    assert_brc20_supply("ordi", 800);
+    assert_brc20_supply("ordi", 800 * SCALE);
 
-    // Second mint of 800 would push supply to 1600 > 1000 max: rejected
-    let mint2 = Brc20Operation::Mint { ticker: "ordi".to_string(), amount: 800 };
+    // Second mint of 800 requested, 200 remaining — should clamp to 200
+    let mint2 = Brc20Operation::Mint { ticker: "ordi".to_string(), amount: 800 * SCALE };
     indexer.process_operation(&mint2, "mint2_0i0", "bc1qminter").unwrap();
 
-    // Supply should still be 800
-    assert_brc20_supply("ordi", 800);
-    assert_brc20_balance("bc1qminter", "ordi", 800, 800);
+    assert_brc20_supply("ordi", 1000 * SCALE);
+    assert_brc20_balance("bc1qminter", "ordi", 1000 * SCALE, 1000 * SCALE);
 }
 
 #[test]
 fn test_mint_nonexistent_ticker_ignored() {
     clear();
     let indexer = Brc20Indexer::new();
-    // Mint for ticker that was never deployed
     let mint = Brc20Operation::Mint {
         ticker: "fake".to_string(),
-        amount: 100,
+        amount: 100 * SCALE,
     };
     indexer.process_operation(&mint, "mint_0i0", "bc1qminter").unwrap();
 
@@ -216,25 +214,22 @@ fn test_transfer_inscribe_reduces_available() {
     clear();
     let indexer = Brc20Indexer::new();
 
-    // Deploy + Mint 1000
     let deploy = Brc20Operation::Deploy {
         ticker: "ordi".to_string(),
-        max_supply: 21_000_000,
-        limit_per_mint: 1000,
+        max_supply: 21_000_000 * SCALE,
+        limit_per_mint: 1000 * SCALE,
         decimals: 18,
+        self_mint: false,
     };
     indexer.process_operation(&deploy, "deploy_0i0", "bc1qowner").unwrap();
-    let mint = Brc20Operation::Mint { ticker: "ordi".to_string(), amount: 1000 };
+    let mint = Brc20Operation::Mint { ticker: "ordi".to_string(), amount: 1000 * SCALE };
     indexer.process_operation(&mint, "mint_0i0", "bc1qsender").unwrap();
 
-    // Transfer inscribe 400
-    let transfer = Brc20Operation::Transfer { ticker: "ordi".to_string(), amount: 400 };
+    let transfer = Brc20Operation::Transfer { ticker: "ordi".to_string(), amount: 400 * SCALE };
     indexer.process_operation(&transfer, "transfer_0i0", "bc1qsender").unwrap();
 
-    // available should be 600 (1000 - 400), total should still be 1000
-    assert_brc20_balance("bc1qsender", "ordi", 600, 1000);
+    assert_brc20_balance("bc1qsender", "ordi", 600 * SCALE, 1000 * SCALE);
 
-    // Transferable inscription should exist
     let transferable = Brc20TransferableInscriptions::new().get("transfer_0i0");
     assert!(transferable.is_some(), "Transferable inscription should be recorded");
 }
@@ -244,25 +239,22 @@ fn test_transfer_inscribe_insufficient_balance_ignored() {
     clear();
     let indexer = Brc20Indexer::new();
 
-    // Deploy + Mint 100
     let deploy = Brc20Operation::Deploy {
         ticker: "ordi".to_string(),
-        max_supply: 21_000_000,
-        limit_per_mint: 1000,
+        max_supply: 21_000_000 * SCALE,
+        limit_per_mint: 1000 * SCALE,
         decimals: 18,
+        self_mint: false,
     };
     indexer.process_operation(&deploy, "deploy_0i0", "bc1qowner").unwrap();
-    let mint = Brc20Operation::Mint { ticker: "ordi".to_string(), amount: 100 };
+    let mint = Brc20Operation::Mint { ticker: "ordi".to_string(), amount: 100 * SCALE };
     indexer.process_operation(&mint, "mint_0i0", "bc1qsender").unwrap();
 
-    // Try to transfer 200 (more than available 100)
-    let transfer = Brc20Operation::Transfer { ticker: "ordi".to_string(), amount: 200 };
+    let transfer = Brc20Operation::Transfer { ticker: "ordi".to_string(), amount: 200 * SCALE };
     indexer.process_operation(&transfer, "transfer_0i0", "bc1qsender").unwrap();
 
-    // Balance should be unchanged
-    assert_brc20_balance("bc1qsender", "ordi", 100, 100);
+    assert_brc20_balance("bc1qsender", "ordi", 100 * SCALE, 100 * SCALE);
 
-    // Transferable inscription should NOT exist
     let transferable = Brc20TransferableInscriptions::new().get("transfer_0i0");
     assert!(transferable.is_none(), "Transfer should not be recorded when balance insufficient");
 }
@@ -272,34 +264,28 @@ fn test_transfer_claim_moves_balance() {
     clear();
     let indexer = Brc20Indexer::new();
 
-    // Deploy
     let deploy = Brc20Operation::Deploy {
         ticker: "ordi".to_string(),
-        max_supply: 21_000_000,
-        limit_per_mint: 1000,
+        max_supply: 21_000_000 * SCALE,
+        limit_per_mint: 1000 * SCALE,
         decimals: 18,
+        self_mint: false,
     };
     indexer.process_operation(&deploy, "deploy_0i0", "bc1qdeployer").unwrap();
 
-    // Mint 1000 to sender
-    let mint = Brc20Operation::Mint { ticker: "ordi".to_string(), amount: 1000 };
+    let mint = Brc20Operation::Mint { ticker: "ordi".to_string(), amount: 1000 * SCALE };
     indexer.process_operation(&mint, "mint_0i0", "bc1qsender").unwrap();
 
-    // Transfer inscribe 400
-    let transfer = Brc20Operation::Transfer { ticker: "ordi".to_string(), amount: 400 };
+    let transfer = Brc20Operation::Transfer { ticker: "ordi".to_string(), amount: 400 * SCALE };
     indexer.process_operation(&transfer, "transfer_0i0", "bc1qsender").unwrap();
 
-    // Claim transfer to recipient
     let transfer_info = TransferInfo {
         ticker: "ordi".to_string(),
-        amount: 400,
+        amount: 400 * SCALE,
         sender: "bc1qsender".to_string(),
     };
     indexer.claim_transfer("bc1qrecipient", &transfer_info).unwrap();
 
-    // Sender: available=600, total=600 (400 deducted from total on claim)
-    assert_brc20_balance("bc1qsender", "ordi", 600, 600);
-
-    // Recipient: available=400, total=400
-    assert_brc20_balance("bc1qrecipient", "ordi", 400, 400);
+    assert_brc20_balance("bc1qsender", "ordi", 600 * SCALE, 600 * SCALE);
+    assert_brc20_balance("bc1qrecipient", "ordi", 400 * SCALE, 400 * SCALE);
 }

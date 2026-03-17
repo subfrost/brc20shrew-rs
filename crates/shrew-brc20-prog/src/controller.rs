@@ -14,26 +14,26 @@ pub const CONTROLLER_ADDRESS: Address = {
     Address::new(bytes)
 };
 
-/// Minimal controller contract bytecode.
+/// BRC20 Controller compiled Solidity bytecode (hex-encoded at compile time).
 ///
-/// In the full implementation, this would contain the compiled Solidity
-/// bytecode for the BRC20 controller with methods:
+/// Source: brc20-programmable-module/src/brc20_controller/contract/output/BRC20_Controller.bin
+/// Contains the full controller with methods:
 ///   - mint(string ticker, address recipient, uint256 amount)
 ///   - burn(string ticker, address sender, uint256 amount)
 ///   - balanceOf(string ticker, address account) -> uint256
-///
-/// For now, we use a placeholder that returns success for any call.
-pub const CONTROLLER_BYTECODE: &[u8] = &[
-    // PUSH1 0x00 PUSH1 0x00 RETURN (minimal valid bytecode)
-    0x60, 0x00, 0x60, 0x00, 0xF3,
-];
+const CONTROLLER_BYTECODE_HEX: &str = include_str!("BRC20_Controller.hex");
+
+/// Decode the controller bytecode from hex. Called once at startup.
+pub fn controller_bytecode() -> Vec<u8> {
+    hex::decode(CONTROLLER_BYTECODE_HEX).expect("BRC20_Controller.hex contains invalid hex")
+}
 
 /// Function selectors for controller methods
 pub mod selectors {
-    /// mint(string,address,uint256)
-    pub const MINT: [u8; 4] = [0x40, 0xc1, 0x0f, 0x19];
-    /// burn(string,address,uint256)
-    pub const BURN: [u8; 4] = [0x44, 0xdf, 0x8e, 0x70];
-    /// balanceOf(string,address)
-    pub const BALANCE_OF: [u8; 4] = [0x00, 0xfb, 0xd2, 0x80];
+    /// mint(bytes,address,uint256)
+    pub const MINT: [u8; 4] = [0x1f, 0xcf, 0xe1, 0x9c];
+    /// burn(bytes,address,uint256)
+    pub const BURN: [u8; 4] = [0xdc, 0x9a, 0xe1, 0x7d];
+    /// balanceOf(bytes,address)
+    pub const BALANCE_OF: [u8; 4] = [0xfc, 0x12, 0x4e, 0xbd];
 }

@@ -34,7 +34,7 @@ pub fn assert_inscription_count(expected: u32) {
 }
 
 /// Assert BRC20 balance for an owner+ticker
-pub fn assert_brc20_balance(owner: &str, ticker: &str, expected_available: u64, expected_total: u64) {
+pub fn assert_brc20_balance(owner: &str, ticker: &str, expected_available: u128, expected_total: u128) {
     let table = Brc20Balances::new();
     let data = table.get(owner, ticker).expect(&format!("No BRC20 balance for {}:{}", owner, ticker));
     let balance: Balance = serde_json::from_slice(&data).expect("Failed to deserialize balance");
@@ -45,7 +45,7 @@ pub fn assert_brc20_balance(owner: &str, ticker: &str, expected_available: u64, 
 }
 
 /// Assert BRC20 ticker supply
-pub fn assert_brc20_supply(ticker: &str, expected_supply: u64) {
+pub fn assert_brc20_supply(ticker: &str, expected_supply: u128) {
     let table = Brc20Tickers::new();
     let data = table.get(ticker).expect(&format!("BRC20 ticker {} not found", ticker));
     let entry: Ticker = serde_json::from_slice(&data).expect("Failed to deserialize ticker");

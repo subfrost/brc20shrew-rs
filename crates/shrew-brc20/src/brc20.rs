@@ -3,6 +3,7 @@ use anyhow::Result;
 use crate::tables::*;
 use shrew_support::inscription::{InscriptionEntry, InscriptionId};
 use shrew_support::utils::get_address_from_txout;
+use shrew_support::constants::{BRC20_SELF_MINT_ENABLE_HEIGHT, BRC20_PROG_PHASE_ONE_HEIGHT};
 use shrew_ord::tables::{
     INSCRIPTION_ID_TO_SEQUENCE, SEQUENCE_TO_INSCRIPTION_ENTRY,
     OUTPOINT_TO_INSCRIPTIONS, INSCRIPTION_CONTENT,
@@ -10,40 +11,51 @@ use shrew_ord::tables::{
 use bitcoin_hashes::Hash;
 use bitcoin::{Block, Network, Transaction};
 use metashrew_support::index_pointer::KeyValuePointer;
+use std::str::FromStr;
+
+/// Maximum representable BRC-20 amount: (2^64 - 1) * 10^18
+/// Matches OPI reference: `pub const MAX_AMOUNT: u128 = (2u128.pow(64) - 1) * 10u128.pow(18);`
+pub const MAX_AMOUNT: u128 = (u64::MAX as u128) * 1_000_000_000_000_000_000u128;
+
+/// Fixed-point scale factor: all amounts are stored as value * 10^18
+const FIXED_POINT_SCALE: u128 = 1_000_000_000_000_000_000u128; // 10^18
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Brc20Operation {
     Deploy {
         ticker: String,
-        max_supply: u64,
-        limit_per_mint: u64,
+        max_supply: u128,
+        limit_per_mint: u128,
         decimals: u8,
+        self_mint: bool,
     },
     Mint {
         ticker: String,
-        amount: u64,
+        amount: u128,
     },
     Transfer {
         ticker: String,
-        amount: u64,
+        amount: u128,
     },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Ticker {
     pub name: String,
-    pub max_supply: u64,
-    pub current_supply: u64,
-    pub limit_per_mint: u64,
+    pub max_supply: u128,
+    pub current_supply: u128,
+    pub limit_per_mint: u128,
     pub decimals: u8,
     pub deploy_inscription_id: String,
+    #[serde(default)]
+    pub is_self_mint: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Balance {
     pub ticker: String,
-    pub total_balance: u64,
-    pub available_balance: u64,
+    pub total_balance: u128,
+    pub available_balance: u128,
 }
 
 impl Balance {
@@ -55,7 +67,7 @@ impl Balance {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TransferInfo {
     pub ticker: String,
-    pub amount: u64,
+    pub amount: u128,
     pub sender: String,
 }
 
@@ -65,19 +77,18 @@ impl Brc20Indexer {
     pub fn new() -> Self { Self }
 
     /// Process an entire block for BRC20 operations.
-    pub fn process_block(&self, block: &Block, _height: u32) {
+    pub fn process_block(&self, block: &Block, height: u32) {
         let network = Network::Bitcoin;
         for tx in &block.txdata {
             // Check for BRC20 transfer claims (spending transferable inscriptions)
             self.process_brc20_transfers(tx, network);
 
             // Check for new BRC20 operations in inscriptions
-            self.process_brc20_inscriptions(tx, network);
+            self.process_brc20_inscriptions(tx, network, height);
         }
     }
 
-    fn process_brc20_inscriptions(&self, tx: &Transaction, network: Network) {
-        // Look up inscriptions created in this transaction
+    fn process_brc20_inscriptions(&self, tx: &Transaction, network: Network, height: u32) {
         for (input_idx, _input) in tx.input.iter().enumerate() {
             let inscription_id = InscriptionId::new(tx.txid(), input_idx as u32);
             let seq_bytes = INSCRIPTION_ID_TO_SEQUENCE.select(&inscription_id.to_bytes()).get();
@@ -91,19 +102,36 @@ impl Brc20Indexer {
                 Err(_) => continue,
             };
 
-            // Check content type
             let _content_type = match &entry.content_type {
                 Some(ct) if ct.starts_with("text/plain") || ct.starts_with("application/json") => ct.clone(),
                 _ => continue,
             };
 
-            // Get content
             let inscription_id_str = inscription_id.to_string();
             let content_bytes = INSCRIPTION_CONTENT.select(&inscription_id_str.as_bytes().to_vec()).get();
             if content_bytes.is_empty() { continue; }
 
-            // Parse BRC20 operation
-            if let Some(operation) = self.parse_operation(&content_bytes) {
+            if let Some(operation) = self.parse_operation(&content_bytes, height) {
+                // For self-mint mints, validate that the parent inscription matches the deploy inscription
+                if let Brc20Operation::Mint { ref ticker, .. } = operation {
+                    let ticker_lower = ticker.to_lowercase();
+                    if let Some(ticker_data) = Brc20Tickers::new().get(&ticker_lower) {
+                        if let Ok(ticker_entry) = serde_json::from_slice::<Ticker>(&ticker_data) {
+                            if ticker_entry.is_self_mint {
+                                // Self-mint mint requires parent inscription ID == deploy inscription ID
+                                let deploy_id = InscriptionId::from_str(&ticker_entry.deploy_inscription_id).ok();
+                                let has_valid_parent = match (&entry.parent, &deploy_id) {
+                                    (Some(parent), Some(deploy)) => parent == deploy,
+                                    _ => false,
+                                };
+                                if !has_valid_parent {
+                                    continue; // Skip: self-mint mint without valid parent
+                                }
+                            }
+                        }
+                    }
+                }
+
                 if let Some(first_output) = tx.output.get(0) {
                     if let Some(address) = get_address_from_txout(first_output, network) {
                         let _ = self.process_operation(&operation, &inscription_id_str, &address.to_string());
@@ -140,26 +168,176 @@ impl Brc20Indexer {
         }
     }
 
-    pub fn parse_operation(&self, content: &[u8]) -> Option<Brc20Operation> {
+    /// Parse a BRC-20 amount string into 18-decimal fixed-point u128.
+    ///
+    /// Matches OPI `get_amount_value()`:
+    /// - Integer amounts: "1000" -> 1000 * 10^18
+    /// - Decimal amounts: "1000.5" -> 1000.5 * 10^18
+    /// - Rejects negative, leading dot, trailing dot, multiple dots
+    /// - Rejects amounts with more than 18 decimal places
+    /// - Rejects amounts exceeding MAX_AMOUNT
+    fn parse_amount(s: &str) -> Option<u128> {
+        // Must be a valid positive decimal number
+        if s.is_empty() { return None; }
+
+        // Reject negative numbers
+        if s.starts_with('-') { return None; }
+
+        // Reject leading dot (e.g. ".5")
+        if s.starts_with('.') { return None; }
+
+        // Reject trailing dot (e.g. "100.")
+        if s.ends_with('.') { return None; }
+
+        // All chars must be digits or a single dot
+        let dot_count = s.chars().filter(|c| *c == '.').count();
+        if dot_count > 1 { return None; }
+        if !s.chars().all(|c| c.is_ascii_digit() || c == '.') { return None; }
+
+        let result: u128;
+        if let Some(dot_index) = s.find('.') {
+            let integer_part = &s[..dot_index];
+            let decimal_part = &s[dot_index + 1..];
+
+            if decimal_part.len() > 18 { return None; }
+
+            // Build the scaled integer: integer_part + decimal_part + padding zeros
+            let mut combined = String::new();
+            combined.push_str(integer_part);
+            combined.push_str(decimal_part);
+            for _ in decimal_part.len()..18 {
+                combined.push('0');
+            }
+            result = combined.parse::<u128>().ok()?;
+        } else {
+            // Integer amount: multiply by 10^18
+            let integer_val = s.parse::<u128>().ok()?;
+            result = integer_val.checked_mul(FIXED_POINT_SCALE)?;
+        }
+
+        // Reject zero
+        // Note: zero rejection is handled by callers for mint/transfer,
+        // but deploy max_supply=0 has special handling. Return the value.
+
+        // Reject amounts exceeding MAX_AMOUNT
+        if result > MAX_AMOUNT { return None; }
+
+        Some(result)
+    }
+
+    /// Check if a string contains only alphanumeric characters or dashes.
+    fn is_alphanumeric_or_dash(s: &str) -> bool {
+        s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+    }
+
+    /// Validate a ticker string per OPI rules:
+    /// - Must be 4, 5, or 6 bytes
+    /// - No null bytes
+    /// - 6-byte tickers must be alphanumeric or dash only
+    /// - Normalized to lowercase for storage
+    fn validate_ticker(ticker: &str) -> Option<String> {
+        let ticker_bytes = ticker.as_bytes();
+
+        // Reject null bytes
+        if ticker_bytes.contains(&0x00) { return None; }
+
+        let len = ticker_bytes.len();
+
+        match len {
+            4 => {} // Standard BRC-20 ticker
+            5 => {} // Self-mint ticker (height validation done elsewhere)
+            6 => {
+                // Predeploy ticker: must be alphanumeric or dash only
+                if !Self::is_alphanumeric_or_dash(ticker) { return None; }
+            }
+            _ => return None,
+        }
+
+        // Normalize to lowercase (OPI: `original_ticker.to_lowercase()`)
+        Some(ticker.to_lowercase())
+    }
+
+    pub fn parse_operation(&self, content: &[u8], height: u32) -> Option<Brc20Operation> {
         let content_str = std::str::from_utf8(content).ok()?;
         let json: serde_json::Value = serde_json::from_str(content_str).ok()?;
+
+        // Validate protocol field: must be "brc-20"
+        let protocol = json.get("p")?.as_str()?;
+        if protocol != "brc-20" { return None; }
+
         let op = json.get("op")?.as_str()?;
-        let ticker = json.get("tick")?.as_str()?;
+        let raw_ticker = json.get("tick")?.as_str()?;
+
+        // Validate and normalize ticker
+        let ticker = Self::validate_ticker(raw_ticker)?;
+        let ticker_byte_len = raw_ticker.as_bytes().len();
+
+        // Height-based validation for extended tickers
+        match ticker_byte_len {
+            5 => {
+                if height < BRC20_SELF_MINT_ENABLE_HEIGHT { return None; }
+            }
+            6 => {
+                if height < BRC20_PROG_PHASE_ONE_HEIGHT { return None; }
+            }
+            _ => {} // 4-byte tickers always allowed
+        }
 
         match op {
             "deploy" => {
-                let max_supply = json.get("max")?.as_str()?.parse::<u64>().ok()?;
-                let limit_per_mint = json.get("lim")?.as_str()?.parse::<u64>().ok()?;
-                let decimals = json.get("dec").and_then(|v| v.as_str()).and_then(|s| s.parse::<u8>().ok()).unwrap_or(18);
-                Some(Brc20Operation::Deploy { ticker: ticker.to_string(), max_supply, limit_per_mint, decimals })
+                // Determine if this is a self-mint deploy
+                let is_self_mint = ticker_byte_len == 5;
+
+                // 5-byte tickers require "self_mint": "true" in the JSON
+                if is_self_mint {
+                    let self_mint_val = json.get("self_mint").and_then(|v| v.as_str());
+                    if self_mint_val != Some("true") { return None; }
+                }
+
+                let max_supply_raw = Self::parse_amount(json.get("max")?.as_str()?)?;
+
+                // For self-mint: max_supply of 0 defaults to MAX_AMOUNT
+                let max_supply = if is_self_mint && max_supply_raw == 0 {
+                    MAX_AMOUNT
+                } else {
+                    if max_supply_raw == 0 { return None; } // Reject zero max_supply for non-self-mint
+                    max_supply_raw
+                };
+
+                // lim defaults to max_supply when absent (OPI behavior)
+                let limit_per_mint = if let Some(lim_val) = json.get("lim") {
+                    let lim_str = lim_val.as_str()?;
+                    let lim = Self::parse_amount(lim_str)?;
+                    // For self-mint: lim of 0 defaults to MAX_AMOUNT
+                    if is_self_mint && lim == 0 {
+                        MAX_AMOUNT
+                    } else {
+                        if lim == 0 { return None; } // zero lim rejected for non-self-mint
+                        lim
+                    }
+                } else {
+                    max_supply
+                };
+
+                let decimals = json.get("dec")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| s.parse::<u8>().ok())
+                    .unwrap_or(18);
+
+                // Decimals must be <= 18
+                if decimals > 18 { return None; }
+
+                Some(Brc20Operation::Deploy { ticker, max_supply, limit_per_mint, decimals, self_mint: is_self_mint })
             }
             "mint" => {
-                let amount = json.get("amt")?.as_str()?.parse::<u64>().ok()?;
-                Some(Brc20Operation::Mint { ticker: ticker.to_string(), amount })
+                let amount = Self::parse_amount(json.get("amt")?.as_str()?)?;
+                if amount == 0 { return None; } // reject zero mint
+                Some(Brc20Operation::Mint { ticker, amount })
             }
             "transfer" => {
-                let amount = json.get("amt")?.as_str()?.parse::<u64>().ok()?;
-                Some(Brc20Operation::Transfer { ticker: ticker.to_string(), amount })
+                let amount = Self::parse_amount(json.get("amt")?.as_str()?)?;
+                if amount == 0 { return None; } // reject zero transfer
+                Some(Brc20Operation::Transfer { ticker, amount })
             }
             _ => None,
         }
@@ -167,37 +345,50 @@ impl Brc20Indexer {
 
     pub fn process_operation(&self, operation: &Brc20Operation, inscription_id: &str, owner: &str) -> Result<()> {
         match operation {
-            Brc20Operation::Deploy { ticker, max_supply, limit_per_mint, decimals } => {
+            Brc20Operation::Deploy { ticker, max_supply, limit_per_mint, decimals, self_mint } => {
+                // Normalize ticker to lowercase for storage/lookup
+                let ticker = ticker.to_lowercase();
                 let tickers_table = Brc20Tickers::new();
-                if tickers_table.get(ticker).is_some() { return Ok(()); }
+                if tickers_table.get(&ticker).is_some() { return Ok(()); }
                 let new_ticker = Ticker {
                     name: ticker.clone(), max_supply: *max_supply, current_supply: 0,
                     limit_per_mint: *limit_per_mint, decimals: *decimals,
                     deploy_inscription_id: inscription_id.to_string(),
+                    is_self_mint: *self_mint,
                 };
-                tickers_table.set(ticker, &serde_json::to_vec(&new_ticker)?);
+                tickers_table.set(&ticker, &serde_json::to_vec(&new_ticker)?);
             }
             Brc20Operation::Mint { ticker, amount } => {
+                let ticker = ticker.to_lowercase();
+                // Reject zero amount
+                if *amount == 0 { return Ok(()); }
                 let tickers_table = Brc20Tickers::new();
-                if let Some(ticker_data) = tickers_table.get(ticker) {
+                if let Some(ticker_data) = tickers_table.get(&ticker) {
                     let mut ticker_entry: Ticker = serde_json::from_slice(&ticker_data)?;
-                    if *amount > ticker_entry.limit_per_mint || ticker_entry.current_supply + amount > ticker_entry.max_supply {
-                        return Ok(());
-                    }
-                    ticker_entry.current_supply += amount;
-                    tickers_table.set(ticker, &serde_json::to_vec(&ticker_entry)?);
+                    if *amount > ticker_entry.limit_per_mint { return Ok(()); }
+                    if ticker_entry.current_supply >= ticker_entry.max_supply { return Ok(()); }
+
+                    // Clamp amount to remaining supply (OPI partial mint behavior)
+                    let remaining = ticker_entry.max_supply - ticker_entry.current_supply;
+                    let mint_amount = (*amount).min(remaining);
+
+                    ticker_entry.current_supply += mint_amount;
+                    tickers_table.set(&ticker, &serde_json::to_vec(&ticker_entry)?);
                     let balances_table = Brc20Balances::new();
-                    let mut balance = balances_table.get(owner, ticker)
+                    let mut balance = balances_table.get(owner, &ticker)
                         .and_then(|d| serde_json::from_slice(&d).ok())
                         .unwrap_or_else(|| Balance::new(ticker.clone()));
-                    balance.total_balance += amount;
-                    balance.available_balance += amount;
-                    balances_table.set(owner, ticker, &serde_json::to_vec(&balance)?);
+                    balance.total_balance += mint_amount;
+                    balance.available_balance += mint_amount;
+                    balances_table.set(owner, &ticker, &serde_json::to_vec(&balance)?);
                 }
             }
             Brc20Operation::Transfer { ticker, amount } => {
+                let ticker = ticker.to_lowercase();
+                // Reject zero amount
+                if *amount == 0 { return Ok(()); }
                 let balances_table = Brc20Balances::new();
-                let balance_data = match balances_table.get(owner, ticker) {
+                let balance_data = match balances_table.get(owner, &ticker) {
                     Some(data) => data,
                     None => return Ok(()),
                 };
@@ -207,7 +398,7 @@ impl Brc20Indexer {
                 };
                 if balance.available_balance < *amount { return Ok(()); }
                 balance.available_balance -= amount;
-                balances_table.set(owner, ticker, &serde_json::to_vec(&balance)?);
+                balances_table.set(owner, &ticker, &serde_json::to_vec(&balance)?);
                 let transfer_info = TransferInfo { ticker: ticker.clone(), amount: *amount, sender: owner.to_string() };
                 Brc20TransferableInscriptions::new().set(inscription_id, &serde_json::to_vec(&transfer_info)?);
             }
