@@ -3,6 +3,7 @@ use crate::envelope::{parse_inscriptions_from_transaction, Inscription};
 use bitcoin::{Amount, Transaction, TxIn, TxOut, OutPoint, Witness, ScriptBuf, Sequence, Txid, transaction::Version};
 use shrew_test_helpers::inscriptions::*;
 use std::str::FromStr;
+use wasm_bindgen_test::wasm_bindgen_test;
 
 /// Helper to build a transaction with a single witness element
 fn tx_with_witness(witness: Witness) -> Transaction {
@@ -28,7 +29,7 @@ fn tx_with_witness(witness: Witness) -> Transaction {
     }
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_parse_simple_text_inscription() {
     let body = b"Hello, World!";
     let content_type = b"text/plain";
@@ -43,7 +44,7 @@ fn test_parse_simple_text_inscription() {
     assert_eq!(inscription.body.as_deref(), Some(body.as_slice()));
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_parse_json_inscription() {
     let body = br#"{"name":"Test","value":42}"#;
     let content_type = b"application/json";
@@ -61,7 +62,7 @@ fn test_parse_json_inscription() {
     assert_eq!(inscription.body.as_deref(), Some(body.as_slice()));
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_parse_image_inscription() {
     let (body, content_type_str) = create_test_image_inscription();
     let witness = create_inscription_envelope(content_type_str.as_bytes(), &body);
@@ -78,7 +79,7 @@ fn test_parse_image_inscription() {
     assert_eq!(inscription.body.as_deref(), Some(body.as_slice()));
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_parse_inscription_with_metadata() {
     let body = b"inscription body";
     let metadata = b"\xa1\x63foo\x63bar"; // CBOR: {"foo": "bar"}
@@ -94,7 +95,7 @@ fn test_parse_inscription_with_metadata() {
     assert_eq!(inscription.body.as_deref(), Some(body.as_slice()));
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_parse_inscription_no_content_type() {
     // Create inscription with empty content type
     let witness = create_inscription_envelope(b"", b"some body data");
@@ -111,7 +112,7 @@ fn test_parse_inscription_no_content_type() {
     }
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_parse_inscription_no_body() {
     // Build a witness with ord envelope but no body tag
     use crate::ord_inscriptions::Inscription as OrdInscription;
@@ -131,7 +132,7 @@ fn test_parse_inscription_no_body() {
     }
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_parse_empty_witness() {
     let tx = Transaction {
         version: Version(1),
@@ -152,7 +153,7 @@ fn test_parse_empty_witness() {
     assert!(envelopes.is_empty(), "Empty witness should yield no envelopes");
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_parse_invalid_envelope() {
     let witness = create_invalid_envelope();
     let tx = tx_with_witness(witness);
@@ -164,7 +165,7 @@ fn test_parse_invalid_envelope() {
     );
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_envelope_content_type_extraction() {
     let inscription = Inscription {
         content_type: Some(b"text/html".to_vec()),
@@ -181,7 +182,7 @@ fn test_envelope_content_type_extraction() {
     assert!(no_ct.content_type().is_none());
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_envelope_content_length() {
     let inscription = Inscription {
         body: Some(b"12345".to_vec()),
@@ -196,7 +197,7 @@ fn test_envelope_content_length() {
     assert!(no_body.content_length().is_none());
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_parse_inscription_with_parent() {
     let parent_id_str = "0000000000000000000000000000000000000000000000000000000000000001i0";
     let witness = create_inscription_envelope_with_parent(
@@ -214,7 +215,7 @@ fn test_parse_inscription_with_parent() {
     assert_eq!(inscription.body.as_deref(), Some(b"child inscription".as_slice()));
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_parse_inscription_with_delegate() {
     let delegate_id_str = "0000000000000000000000000000000000000000000000000000000000000002i0";
     let witness = create_inscription_envelope_with_delegate(
@@ -234,7 +235,7 @@ fn test_parse_inscription_with_delegate() {
     );
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_parse_inscription_with_pointer() {
     use crate::ord_inscriptions::Inscription as OrdInscription;
     let pointer_value: u64 = 42;
@@ -255,7 +256,7 @@ fn test_parse_inscription_with_pointer() {
     assert_eq!(parsed.pointer_value(), Some(42));
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_envelope_is_cursed_for_no_body() {
     let inscription = Inscription {
         content_type: Some(b"text/plain".to_vec()),
@@ -268,7 +269,7 @@ fn test_envelope_is_cursed_for_no_body() {
     );
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_envelope_is_cursed_for_duplicate_field() {
     let inscription = Inscription {
         content_type: Some(b"text/plain".to_vec()),

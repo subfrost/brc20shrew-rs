@@ -10,6 +10,7 @@ use wasm_bindgen_test::wasm_bindgen_test as test;
 use crate::brc20::{Brc20Indexer, Brc20Operation, Ticker, MAX_AMOUNT};
 use crate::tables::Brc20Tickers;
 use shrew_test_helpers::state::clear;
+use wasm_bindgen_test::wasm_bindgen_test;
 
 const SCALE: u128 = 1_000_000_000_000_000_000u128; // 10^18
 
@@ -17,7 +18,7 @@ const SCALE: u128 = 1_000_000_000_000_000_000u128; // 10^18
 // 5-byte self-mint deploy tests
 // ============================================================================
 
-#[test]
+#[wasm_bindgen_test]
 fn test_self_mint_deploy_accepted_at_correct_height() {
     let indexer = Brc20Indexer::new();
     let content = br#"{"p":"brc-20","op":"deploy","tick":"abcde","max":"1000","lim":"100","self_mint":"true"}"#;
@@ -32,7 +33,7 @@ fn test_self_mint_deploy_accepted_at_correct_height() {
     }
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_self_mint_deploy_rejected_before_activation() {
     let indexer = Brc20Indexer::new();
     let content = br#"{"p":"brc-20","op":"deploy","tick":"abcde","max":"1000","lim":"100","self_mint":"true"}"#;
@@ -40,7 +41,7 @@ fn test_self_mint_deploy_rejected_before_activation() {
     assert!(result.is_none(), "5-byte ticker should be rejected before height 837090");
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_self_mint_deploy_without_flag_rejected() {
     let indexer = Brc20Indexer::new();
     // 5-byte ticker without "self_mint":"true"
@@ -49,7 +50,7 @@ fn test_self_mint_deploy_without_flag_rejected() {
     assert!(result.is_none(), "5-byte ticker without self_mint flag should be rejected");
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_self_mint_deploy_wrong_flag_value_rejected() {
     let indexer = Brc20Indexer::new();
     let content = br#"{"p":"brc-20","op":"deploy","tick":"abcde","max":"1000","lim":"100","self_mint":"false"}"#;
@@ -57,7 +58,7 @@ fn test_self_mint_deploy_wrong_flag_value_rejected() {
     assert!(result.is_none(), "self_mint='false' should be rejected for 5-byte ticker");
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_self_mint_deploy_max_supply_zero_defaults_to_max_amount() {
     let indexer = Brc20Indexer::new();
     let content = br#"{"p":"brc-20","op":"deploy","tick":"abcde","max":"0","lim":"1000","self_mint":"true"}"#;
@@ -71,7 +72,7 @@ fn test_self_mint_deploy_max_supply_zero_defaults_to_max_amount() {
     }
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_self_mint_deploy_lim_zero_defaults_to_max_amount() {
     let indexer = Brc20Indexer::new();
     let content = br#"{"p":"brc-20","op":"deploy","tick":"abcde","max":"0","lim":"0","self_mint":"true"}"#;
@@ -85,7 +86,7 @@ fn test_self_mint_deploy_lim_zero_defaults_to_max_amount() {
     }
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_self_mint_deploy_explicit_supply_preserved() {
     let indexer = Brc20Indexer::new();
     let content = br#"{"p":"brc-20","op":"deploy","tick":"abcde","max":"5000","lim":"100","self_mint":"true"}"#;
@@ -100,7 +101,7 @@ fn test_self_mint_deploy_explicit_supply_preserved() {
     }
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_self_mint_flag_stored_in_ticker() {
     clear();
     let indexer = Brc20Indexer::new();
@@ -110,6 +111,7 @@ fn test_self_mint_flag_stored_in_ticker() {
         limit_per_mint: 100 * SCALE,
         decimals: 18,
         self_mint: true,
+        salt: None,
     };
     indexer.process_operation(&op, "deploy_0i0", "bc1qdeployer").unwrap();
 
@@ -118,7 +120,7 @@ fn test_self_mint_flag_stored_in_ticker() {
     assert!(ticker.is_self_mint, "is_self_mint should be true in stored ticker");
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_regular_4byte_ticker_not_self_mint() {
     clear();
     let indexer = Brc20Indexer::new();
@@ -128,6 +130,7 @@ fn test_regular_4byte_ticker_not_self_mint() {
         limit_per_mint: 1000 * SCALE,
         decimals: 18,
         self_mint: false,
+        salt: None,
     };
     indexer.process_operation(&op, "deploy_0i0", "bc1qdeployer").unwrap();
 
@@ -140,10 +143,10 @@ fn test_regular_4byte_ticker_not_self_mint() {
 // 6-byte predeploy ticker tests
 // ============================================================================
 
-#[test]
+#[wasm_bindgen_test]
 fn test_6byte_ticker_accepted_at_correct_height() {
     let indexer = Brc20Indexer::new();
-    let content = br#"{"p":"brc-20","op":"deploy","tick":"abcdef","max":"1000","lim":"100"}"#;
+    let content = br#"{"p":"brc-20","op":"deploy","tick":"abcdef","max":"1000","lim":"100","salt":"aabb"}"#;
     let result = indexer.parse_operation(content, 912690);
     assert!(result.is_some(), "6-byte ticker should succeed at height 912690");
     match result.unwrap() {
@@ -155,7 +158,7 @@ fn test_6byte_ticker_accepted_at_correct_height() {
     }
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_6byte_ticker_rejected_before_activation() {
     let indexer = Brc20Indexer::new();
     let content = br#"{"p":"brc-20","op":"deploy","tick":"abcdef","max":"1000","lim":"100"}"#;
@@ -163,16 +166,16 @@ fn test_6byte_ticker_rejected_before_activation() {
     assert!(result.is_none(), "6-byte ticker should be rejected before height 912690");
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_6byte_ticker_alphanumeric_accepted() {
     let indexer = Brc20Indexer::new();
     // Alphanumeric + dash
-    let content = br#"{"p":"brc-20","op":"deploy","tick":"abc-12","max":"1000","lim":"100"}"#;
+    let content = br#"{"p":"brc-20","op":"deploy","tick":"abc-12","max":"1000","lim":"100","salt":"aabb"}"#;
     let result = indexer.parse_operation(content, 912690);
     assert!(result.is_some(), "6-byte alphanumeric+dash ticker should be accepted");
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_6byte_ticker_underscore_rejected() {
     let indexer = Brc20Indexer::new();
     let content = br#"{"p":"brc-20","op":"deploy","tick":"abc_12","max":"1000","lim":"100"}"#;
@@ -180,7 +183,7 @@ fn test_6byte_ticker_underscore_rejected() {
     assert!(result.is_none(), "6-byte ticker with underscore should be rejected");
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_6byte_ticker_space_rejected() {
     let indexer = Brc20Indexer::new();
     let content = br#"{"p":"brc-20","op":"deploy","tick":"abc 12","max":"1000","lim":"100"}"#;
@@ -188,7 +191,7 @@ fn test_6byte_ticker_space_rejected() {
     assert!(result.is_none(), "6-byte ticker with space should be rejected");
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_6byte_ticker_special_char_rejected() {
     let indexer = Brc20Indexer::new();
     let content = br#"{"p":"brc-20","op":"deploy","tick":"abc!@#","max":"1000","lim":"100"}"#;
@@ -202,7 +205,7 @@ fn test_6byte_ticker_special_char_rejected() {
 // These test the stored is_self_mint flag behavior.
 // ============================================================================
 
-#[test]
+#[wasm_bindgen_test]
 fn test_self_mint_ticker_mint_via_process_operation() {
     clear();
     let indexer = Brc20Indexer::new();
@@ -214,6 +217,7 @@ fn test_self_mint_ticker_mint_via_process_operation() {
         limit_per_mint: 100 * SCALE,
         decimals: 18,
         self_mint: true,
+        salt: None,
     };
     indexer.process_operation(&deploy, "deploy_0i0", "bc1qdeployer").unwrap();
 
@@ -235,7 +239,7 @@ fn test_self_mint_ticker_mint_via_process_operation() {
 // 5-byte ticker mint parsing (parse_operation level)
 // ============================================================================
 
-#[test]
+#[wasm_bindgen_test]
 fn test_5byte_ticker_mint_parsed_at_correct_height() {
     let indexer = Brc20Indexer::new();
     let content = br#"{"p":"brc-20","op":"mint","tick":"abcde","amt":"100"}"#;
@@ -243,7 +247,7 @@ fn test_5byte_ticker_mint_parsed_at_correct_height() {
     assert!(result.is_some(), "5-byte ticker mint should parse at height >= 837090");
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_5byte_ticker_mint_rejected_before_activation() {
     let indexer = Brc20Indexer::new();
     let content = br#"{"p":"brc-20","op":"mint","tick":"abcde","amt":"100"}"#;
@@ -251,7 +255,7 @@ fn test_5byte_ticker_mint_rejected_before_activation() {
     assert!(result.is_none(), "5-byte ticker mint should be rejected before height 837090");
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_5byte_ticker_transfer_parsed_at_correct_height() {
     let indexer = Brc20Indexer::new();
     let content = br#"{"p":"brc-20","op":"transfer","tick":"abcde","amt":"100"}"#;
@@ -263,7 +267,7 @@ fn test_5byte_ticker_transfer_parsed_at_correct_height() {
 // Edge cases
 // ============================================================================
 
-#[test]
+#[wasm_bindgen_test]
 fn test_4byte_ticker_unaffected_by_height() {
     let indexer = Brc20Indexer::new();
     let content = br#"{"p":"brc-20","op":"deploy","tick":"ordi","max":"21000000","lim":"1000"}"#;
@@ -272,7 +276,7 @@ fn test_4byte_ticker_unaffected_by_height() {
     assert!(result.is_some(), "4-byte ticker should work at any height");
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_self_mint_deploy_no_self_mint_flag_on_4byte_ignored() {
     let indexer = Brc20Indexer::new();
     // 4-byte ticker with self_mint field — should be ignored (not a 5-byte ticker)

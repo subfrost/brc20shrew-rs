@@ -164,6 +164,7 @@ fn test_mint_respects_ticker_decimals() {
         limit_per_mint: 1000 * SCALE,
         decimals: 2,
         self_mint: false,
+        salt: None,
     };
     indexer.process_operation(&deploy, "deploy_0i0", "bc1qdeployer").unwrap();
 
@@ -189,6 +190,7 @@ fn test_mint_dec0_rejects_decimal_amount() {
         limit_per_mint: 100_000_000u128 * SCALE,
         decimals: 0,
         self_mint: false,
+        salt: None,
     };
     indexer.process_operation(&deploy, "deploy_0i0", "bc1qdeployer").unwrap();
 
@@ -230,6 +232,7 @@ fn test_transfer_respects_ticker_decimals() {
         limit_per_mint: 1000 * SCALE,
         decimals: 2,
         self_mint: false,
+        salt: None,
     };
     indexer.process_operation(&deploy, "deploy_0i0", "bc1qdeployer").unwrap();
 
@@ -260,6 +263,7 @@ fn test_lifecycle_dec2_deploy_mint_transfer() {
         limit_per_mint: Brc20Indexer::parse_amount("1000", 2).unwrap(),
         decimals: 2,
         self_mint: false,
+        salt: None,
     };
     indexer.process_operation(&deploy, "deploy_0i0", "bc1qdeployer").unwrap();
 
@@ -298,6 +302,7 @@ fn test_lifecycle_dec0_integer_only() {
         limit_per_mint: 1000 * SCALE,
         decimals: 0,
         self_mint: false,
+        salt: None,
     };
     indexer.process_operation(&deploy, "deploy_0i0", "bc1qdeployer").unwrap();
 

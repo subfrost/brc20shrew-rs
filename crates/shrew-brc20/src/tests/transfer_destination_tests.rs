@@ -28,6 +28,7 @@ fn setup_sender(indexer: &Brc20Indexer, ticker: &str, mint_amount: u128, sender:
         limit_per_mint: mint_amount,
         decimals: 18,
         self_mint: false,
+        salt: None,
     };
     indexer.process_operation(&deploy, "deploy_0i0", "bc1qdeployer").unwrap();
     let mint = Brc20Operation::Mint { ticker: ticker.to_string(), amount: mint_amount };
@@ -353,6 +354,7 @@ fn test_brc20_prog_deposit_6byte_ticker_after_phase1_deposits() {
         limit_per_mint: 1000 * SCALE,
         decimals: 18,
         self_mint: false,
+        salt: None,
     };
     indexer.process_operation(&deploy, "deploy_0i0", "bc1qdeployer").unwrap();
     let mint = Brc20Operation::Mint { ticker: "abcdef".to_string(), amount: 1000 * SCALE };
@@ -390,6 +392,7 @@ fn test_brc20_prog_deposit_accumulates() {
         limit_per_mint: 1000 * SCALE,
         decimals: 18,
         self_mint: false,
+        salt: None,
     };
     indexer.process_operation(&deploy, "deploy_0i0", "bc1qdeployer").unwrap();
     let mint = Brc20Operation::Mint { ticker: "abcdef".to_string(), amount: 1000 * SCALE };
@@ -547,6 +550,7 @@ fn test_burn_with_missing_sender_balance_no_panic() {
         limit_per_mint: 1000 * SCALE,
         decimals: 18,
         self_mint: false,
+        salt: None,
     };
     indexer.process_operation(&deploy, "deploy_0i0", "bc1qdeployer").unwrap();
 
@@ -567,6 +571,7 @@ fn test_fee_return_with_missing_sender_balance_no_panic() {
         limit_per_mint: 1000 * SCALE,
         decimals: 18,
         self_mint: false,
+        salt: None,
     };
     indexer.process_operation(&deploy, "deploy_0i0", "bc1qdeployer").unwrap();
 
@@ -645,6 +650,7 @@ fn test_full_lifecycle_inscribe_classify_resolve_prog_deposit() {
         limit_per_mint: 1000 * SCALE,
         decimals: 18,
         self_mint: false,
+        salt: None,
     };
     indexer.process_operation(&deploy, "deploy_0i0", "bc1qdeployer").unwrap();
     let mint = Brc20Operation::Mint { ticker: "abcdef".to_string(), amount: 1000 * SCALE };
@@ -681,6 +687,7 @@ fn test_brc20_prog_deposit_records_event() {
         limit_per_mint: 1000 * SCALE,
         decimals: 18,
         self_mint: false,
+        salt: None,
     };
     indexer.process_operation(&deploy, "deploy_0i0", "bc1qdeployer").unwrap();
     let mint = Brc20Operation::Mint { ticker: "abcdef".to_string(), amount: 1000 * SCALE };
@@ -727,6 +734,7 @@ fn test_brc20_prog_deposit_events_accumulate() {
         limit_per_mint: 1000 * SCALE,
         decimals: 18,
         self_mint: false,
+        salt: None,
     };
     indexer.process_operation(&deploy, "deploy_0i0", "bc1qdeployer").unwrap();
     let mint = Brc20Operation::Mint { ticker: "abcdef".to_string(), amount: 1000 * SCALE };

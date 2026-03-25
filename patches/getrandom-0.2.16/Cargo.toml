@@ -3,5 +3,12 @@ name = "getrandom"
 version = "0.2.16"
 edition = "2021"
 
+[dependencies]
+
 [features]
 custom = []
+js = []
+std = []
+rdrand = []
+linux_disable_fallback = []
+test-in-browser = []

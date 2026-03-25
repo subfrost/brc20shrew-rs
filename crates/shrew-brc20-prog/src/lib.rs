@@ -4,6 +4,7 @@ use serde_json::{from_slice, to_vec};
 
 pub mod prog_indexer;
 pub mod controller;
+pub mod trace_hash;
 pub mod view;
 
 pub mod proto {

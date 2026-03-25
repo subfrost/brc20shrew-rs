@@ -109,6 +109,7 @@ fn test_double_claim_prevented_via_delete() {
         limit_per_mint: 1000 * SCALE,
         decimals: 18,
         self_mint: false,
+        salt: None,
     };
     indexer.process_operation(&deploy, "deploy_0i0", "bc1qdeployer").unwrap();
     let mint = Brc20Operation::Mint { ticker: "ordi".to_string(), amount: 1000 * SCALE };
@@ -157,6 +158,7 @@ fn test_double_resolve_without_delete_duplicates_tokens() {
         limit_per_mint: 1000 * SCALE,
         decimals: 18,
         self_mint: false,
+        salt: None,
     };
     indexer.process_operation(&deploy, "deploy_0i0", "bc1qdeployer").unwrap();
     let mint = Brc20Operation::Mint { ticker: "ordi".to_string(), amount: 1000 * SCALE };
@@ -307,6 +309,7 @@ fn setup_with_transfer(indexer: &Brc20Indexer, ticker: &str, mint: u128, xfer: u
         limit_per_mint: mint,
         decimals: 18,
         self_mint: false,
+        salt: None,
     };
     indexer.process_operation(&deploy, "deploy_0i0", "bc1qdeployer").unwrap();
     let mint_op = Brc20Operation::Mint { ticker: ticker.to_string(), amount: mint };
@@ -381,6 +384,7 @@ fn test_resolve_via_classify_prog_deposit() {
         limit_per_mint: 1000 * SCALE,
         decimals: 18,
         self_mint: false,
+        salt: None,
     };
     indexer.process_operation(&deploy, "deploy_0i0", "bc1qdeployer").unwrap();
     let mint = Brc20Operation::Mint { ticker: "abcdef".to_string(), amount: 1000 * SCALE };
@@ -417,6 +421,7 @@ fn test_multi_destination_sequence() {
         limit_per_mint: 5000 * SCALE,
         decimals: 18,
         self_mint: false,
+        salt: None,
     };
     indexer.process_operation(&deploy, "deploy_0i0", "bc1qdeployer").unwrap();
     let mint = Brc20Operation::Mint { ticker: "ordi".to_string(), amount: 5000 * SCALE };
@@ -488,6 +493,7 @@ fn test_conservation_check() {
         limit_per_mint: 2000 * SCALE,
         decimals: 18,
         self_mint: false,
+        salt: None,
     };
     indexer.process_operation(&deploy, "deploy_0i0", "bc1qdeployer").unwrap();
     let mint = Brc20Operation::Mint { ticker: "ordi".to_string(), amount: 2000 * SCALE };
@@ -557,6 +563,7 @@ fn test_ordering_documented() {
         limit_per_mint: 1000 * SCALE,
         decimals: 18,
         self_mint: false,
+        salt: None,
     };
     indexer.process_operation(&deploy, "deploy_0i0", "bc1qdeployer").unwrap();
     let mint = Brc20Operation::Mint { ticker: "ordi".to_string(), amount: 1000 * SCALE };

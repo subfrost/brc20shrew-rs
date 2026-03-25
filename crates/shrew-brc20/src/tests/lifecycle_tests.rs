@@ -3,6 +3,7 @@ use crate::brc20::{Brc20Indexer, Brc20Operation, TransferInfo};
 use crate::tables::{Brc20Tickers, Brc20Balances};
 use shrew_test_helpers::state::clear;
 use shrew_test_helpers::assertions::{assert_brc20_balance, assert_brc20_supply};
+use wasm_bindgen_test::wasm_bindgen_test;
 
 const SCALE: u128 = 1_000_000_000_000_000_000u128; // 10^18
 
@@ -14,6 +15,7 @@ fn deploy(indexer: &Brc20Indexer, ticker: &str, max_supply: u128, lim: u128, ins
         limit_per_mint: lim,
         decimals: 18,
         self_mint: false,
+        salt: None,
     };
     indexer.process_operation(&op, inscription_id, "bc1qdeployer").unwrap();
 }
@@ -56,7 +58,7 @@ fn transfer_claim(indexer: &Brc20Indexer, ticker: &str, amount: u128, sender: &s
 // Full lifecycle tests
 // ---------------------------------------------------------------------------
 
-#[test]
+#[wasm_bindgen_test]
 fn test_deploy_mint_transfer_lifecycle() {
     clear();
     let indexer = Brc20Indexer::new();
@@ -80,7 +82,7 @@ fn test_deploy_mint_transfer_lifecycle() {
     assert_brc20_supply("ordi", 1000 * SCALE);
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_multiple_mints_same_ticker() {
     clear();
     let indexer = Brc20Indexer::new();
@@ -97,7 +99,7 @@ fn test_multiple_mints_same_ticker() {
     assert_brc20_balance("bc1qminer3", "pepe", 500 * SCALE, 500 * SCALE);
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_mint_to_max_supply() {
     clear();
     let indexer = Brc20Indexer::new();
@@ -116,7 +118,7 @@ fn test_mint_to_max_supply() {
     assert!(balance.is_none(), "Mint beyond max supply should be rejected");
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_multiple_tickers() {
     clear();
     let indexer = Brc20Indexer::new();
@@ -138,7 +140,7 @@ fn test_multiple_tickers() {
     assert!(bob_pepe.is_none(), "Bob should have no pepe tokens");
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_brc20_across_blocks() {
     clear();
     let indexer = Brc20Indexer::new();
@@ -162,7 +164,7 @@ fn test_brc20_across_blocks() {
     assert_brc20_balance("bc1qbob", "ordi", 800 * SCALE, 800 * SCALE);
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_transfer_to_self() {
     clear();
     let indexer = Brc20Indexer::new();

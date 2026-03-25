@@ -1,5 +1,6 @@
 use wasm_bindgen_test::wasm_bindgen_test as test;
 use crate::brc20::{Brc20Indexer, Brc20Operation};
+use wasm_bindgen_test::wasm_bindgen_test;
 
 /// Helper to create BRC20 JSON content bytes
 fn brc20_json(op: &str, ticker: &str, fields: &[(&str, &str)]) -> Vec<u8> {
@@ -15,7 +16,7 @@ fn brc20_json(op: &str, ticker: &str, fields: &[(&str, &str)]) -> Vec<u8> {
 // "21000000" parses to 21000000 * 10^18 = 21_000_000_000_000_000_000_000_000
 const SCALE: u128 = 1_000_000_000_000_000_000u128; // 10^18
 
-#[test]
+#[wasm_bindgen_test]
 fn test_parse_deploy_operation() {
     let indexer = Brc20Indexer::new();
     let content = brc20_json("deploy", "ordi", &[("max", "21000000"), ("lim", "1000")]);
@@ -28,11 +29,12 @@ fn test_parse_deploy_operation() {
             limit_per_mint: 1000 * SCALE,
             decimals: 18,
             self_mint: false,
+            salt: None,
         })
     );
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_parse_mint_operation() {
     let indexer = Brc20Indexer::new();
     let content = brc20_json("mint", "ordi", &[("amt", "500")]);
@@ -46,7 +48,7 @@ fn test_parse_mint_operation() {
     );
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_parse_transfer_operation() {
     let indexer = Brc20Indexer::new();
     let content = brc20_json("transfer", "ordi", &[("amt", "250")]);
@@ -60,7 +62,7 @@ fn test_parse_transfer_operation() {
     );
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_parse_invalid_op() {
     let indexer = Brc20Indexer::new();
     let content = brc20_json("burn", "ordi", &[("amt", "100")]);
@@ -68,7 +70,7 @@ fn test_parse_invalid_op() {
     assert_eq!(result, None);
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_parse_missing_ticker() {
     let indexer = Brc20Indexer::new();
     let content = br#"{ "p": "brc-20", "op": "deploy", "max": "21000000", "lim": "1000" }"#;
@@ -76,7 +78,7 @@ fn test_parse_missing_ticker() {
     assert_eq!(result, None);
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_parse_non_json() {
     let indexer = Brc20Indexer::new();
     let content = b"this is not json at all";
@@ -84,7 +86,7 @@ fn test_parse_non_json() {
     assert_eq!(result, None);
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_parse_deploy_default_decimals() {
     let indexer = Brc20Indexer::new();
     let content = brc20_json("deploy", "pepe", &[("max", "420690000000"), ("lim", "1000")]);
@@ -97,7 +99,7 @@ fn test_parse_deploy_default_decimals() {
     }
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_parse_deploy_with_decimals() {
     let indexer = Brc20Indexer::new();
     let content = brc20_json("deploy", "sats", &[("max", "2100000000000000"), ("lim", "100000000"), ("dec", "8")]);
@@ -110,7 +112,7 @@ fn test_parse_deploy_with_decimals() {
     }
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_parse_invalid_amount() {
     let indexer = Brc20Indexer::new();
     let content = brc20_json("mint", "ordi", &[("amt", "not_a_number")]);

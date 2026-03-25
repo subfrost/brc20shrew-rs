@@ -1,6 +1,7 @@
 use wasm_bindgen_test::wasm_bindgen_test as test;
 use crate::indexer::InscriptionIndexer;
 use crate::tables::*;
+use wasm_bindgen_test::wasm_bindgen_test;
 use bitcoin_hashes::Hash;
 use metashrew_support::index_pointer::KeyValuePointer;
 use shrew_support::inscription::{Charm, InscriptionEntry, InscriptionId};
@@ -10,7 +11,7 @@ use shrew_test_helpers::inscriptions::*;
 use shrew_test_helpers::state;
 use shrew_test_helpers::transactions::*;
 
-#[test]
+#[wasm_bindgen_test]
 fn test_index_empty_block() {
     state::clear();
     let block = create_block_with_coinbase_tx(100);
@@ -23,7 +24,7 @@ fn test_index_empty_block() {
     assert!(!hash_bytes.is_empty(), "Block hash should be stored for height 100");
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_index_single_inscription() {
     state::clear();
     let tx = create_inscription_transaction(b"Hello Inscription", "text/plain", None);
@@ -50,7 +51,7 @@ fn test_index_single_inscription() {
     assert_eq!(entry.height, 100);
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_index_multiple_inscriptions_same_block() {
     state::clear();
     let tx1 = create_inscription_transaction(b"First", "text/plain", None);
@@ -100,7 +101,7 @@ fn test_index_multiple_inscriptions_same_block() {
 
 use std::str::FromStr;
 
-#[test]
+#[wasm_bindgen_test]
 fn test_index_inscription_sequence_across_blocks() {
     state::clear();
 
@@ -143,7 +144,7 @@ fn test_index_inscription_sequence_across_blocks() {
     assert_eq!(entry2.height, 101);
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_index_blessed_inscription_numbering() {
     state::clear();
     // Non-coinbase inscriptions (tx_index > 0) are blessed before jubilee
@@ -163,7 +164,7 @@ fn test_index_blessed_inscription_numbering() {
     );
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_index_cursed_coinbase_inscription() {
     state::clear();
     // The coinbase tx (tx_index == 0) is considered cursed by context before jubilee.
@@ -189,7 +190,7 @@ fn test_index_cursed_coinbase_inscription() {
     assert!(entry.has_charm(Charm::Cursed));
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_index_inscription_content_stored() {
     state::clear();
     let body = b"Stored content for retrieval";
@@ -209,7 +210,7 @@ fn test_index_inscription_content_stored() {
     );
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_index_inscription_metadata_stored() {
     state::clear();
     let body = b"body with metadata";
@@ -250,7 +251,7 @@ fn test_index_inscription_metadata_stored() {
     );
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_index_satpoint_calculation() {
     state::clear();
     let tx = create_inscription_transaction(b"satpoint test", "text/plain", None);
@@ -267,7 +268,7 @@ fn test_index_satpoint_calculation() {
     assert_eq!(entry.satpoint.offset, 0);
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_index_content_type_index() {
     state::clear();
     let tx = create_inscription_transaction(b"text content", "text/plain", None);
@@ -285,7 +286,7 @@ fn test_index_content_type_index() {
     );
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_index_txid_to_inscriptions() {
     state::clear();
     let tx = create_inscription_transaction(b"txid test", "text/plain", None);
@@ -302,7 +303,7 @@ fn test_index_txid_to_inscriptions() {
     );
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_index_block_hash_stored() {
     state::clear();
     let block = create_block_with_coinbase_tx(500);
@@ -329,7 +330,7 @@ fn test_index_block_hash_stored() {
     assert_eq!(stored_height, 500, "Stored height should be 500");
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_index_state_persistence() {
     state::clear();
 
@@ -353,7 +354,7 @@ fn test_index_state_persistence() {
     );
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_index_charm_cursed() {
     state::clear();
     // Coinbase inscription is cursed before jubilee
@@ -371,7 +372,7 @@ fn test_index_charm_cursed() {
     );
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_index_charm_unbound() {
     state::clear();
     // Inscription without body gets Unbound charm
@@ -418,7 +419,7 @@ fn test_index_charm_unbound() {
     }
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_index_outpoint_to_inscriptions() {
     state::clear();
     let tx = create_inscription_transaction(b"outpoint test", "text/plain", None);
@@ -449,7 +450,7 @@ fn test_index_outpoint_to_inscriptions() {
     );
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_index_duplicate_inscription_rejected() {
     state::clear();
     let tx = create_inscription_transaction(b"unique", "text/plain", None);
@@ -468,7 +469,7 @@ fn test_index_duplicate_inscription_rejected() {
     );
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_index_inscription_number_to_sequence() {
     state::clear();
     let tx = create_inscription_transaction(b"numbered", "text/plain", None);
@@ -490,7 +491,7 @@ fn test_index_inscription_number_to_sequence() {
     );
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_index_inscription_to_txid() {
     state::clear();
     let tx = create_inscription_transaction(b"txid mapping", "text/plain", None);
@@ -509,7 +510,7 @@ fn test_index_inscription_to_txid() {
     );
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_index_inscription_entry_content_type() {
     state::clear();
     let tx = create_inscription_transaction(b"typed content", "application/json", None);

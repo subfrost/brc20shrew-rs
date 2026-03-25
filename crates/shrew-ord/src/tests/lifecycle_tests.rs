@@ -14,8 +14,9 @@ use shrew_test_helpers::inscriptions::*;
 use shrew_test_helpers::state;
 use shrew_test_helpers::transactions::*;
 use std::str::FromStr;
+use wasm_bindgen_test::wasm_bindgen_test;
 
-#[test]
+#[wasm_bindgen_test]
 fn test_full_inscription_lifecycle() {
     state::clear();
 
@@ -83,7 +84,7 @@ fn test_full_inscription_lifecycle() {
     assert_eq!(list_response.ids.len(), 1);
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_multi_block_lifecycle() {
     state::clear();
 
@@ -136,7 +137,7 @@ fn test_multi_block_lifecycle() {
     assert_eq!(list_response.ids.len(), 5);
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_inscription_transfer() {
     state::clear();
 
@@ -168,7 +169,7 @@ fn test_inscription_transfer() {
     assert!(!hash_bytes.is_empty(), "Transfer block should be indexed");
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_inscription_with_all_fields() {
     state::clear();
 
@@ -221,7 +222,7 @@ fn test_inscription_with_all_fields() {
     assert_eq!(&*stored_metadata, metadata);
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_large_content_inscription() {
     state::clear();
 
@@ -254,7 +255,7 @@ fn test_large_content_inscription() {
     assert_eq!(stored_content.len(), 400_000, "Stored content should be 400KB");
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_batch_inscriptions() {
     state::clear();
 
@@ -291,7 +292,7 @@ fn test_batch_inscriptions() {
     }
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_inscription_numbering_consistency() {
     state::clear();
 
@@ -338,7 +339,7 @@ fn test_inscription_numbering_consistency() {
     }
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_empty_blocks_no_errors() {
     state::clear();
 

@@ -3,6 +3,7 @@ use bitcoin::{Block, consensus::deserialize};
 use serde_json::{from_slice, to_vec};
 
 pub mod brc20;
+pub mod event_hash;
 pub mod tables;
 pub mod view;
 
@@ -10,7 +11,7 @@ pub mod proto {
     include!(concat!(env!("OUT_DIR"), "/shrew_brc20.rs"));
 }
 
-pub use brc20::{Brc20Indexer, Brc20Operation, Ticker, Balance, TransferInfo};
+pub use brc20::{Brc20Indexer, Brc20Operation, Ticker, Balance, TransferInfo, PredeployInfo, compute_predeploy_hash};
 
 
 #[cfg(feature = "entrypoint")]

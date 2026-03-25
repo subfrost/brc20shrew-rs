@@ -31,15 +31,15 @@ revm = { workspace = true }
 sha2 = { workspace = true }
 alloy-primitives = { workspace = true }
 alloy-sol-types = { workspace = true }
-wasm-bindgen = { workspace = true }
 getrandom = { workspace = true }
 metashrew-core = { workspace = true }
 metashrew-support = { workspace = true }
 
 [dev-dependencies]
-metashrew-core = { git = "https://github.com/sandshrewmetaprotocols/metashrew", features = ["test-utils"], branch = "sandshrewmetadev/v9.1.0", default-features = false }
+metashrew-core = { workspace = true, features = ["test-utils"] }
 wasm-bindgen-test = { workspace = true }
 shrew-test-helpers = { workspace = true }
+sha2 = { workspace = true }
 
 [build-dependencies]
 prost-build = { workspace = true }

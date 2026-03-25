@@ -27,6 +27,10 @@ bincode = { workspace = true }
 hex = { workspace = true }
 sha2 = { workspace = true }
 anyhow = { workspace = true }
-metashrew-core = { git = "https://github.com/sandshrewmetaprotocols/metashrew", features = ["test-utils"], branch = "sandshrewmetadev/v9.1.0", default-features = false }
+metashrew-core = { workspace = true, features = ["test-utils"] }
 metashrew-support = { workspace = true }
+wasm-bindgen-test = { workspace = true }
+
+[dev-dependencies]
+metashrew-core = { workspace = true, features = ["test-utils"] }
 wasm-bindgen-test = { workspace = true }

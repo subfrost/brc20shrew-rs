@@ -14,6 +14,7 @@ use shrew_test_helpers::inscriptions::*;
 use shrew_test_helpers::state;
 use shrew_test_helpers::transactions::*;
 use std::str::FromStr;
+use wasm_bindgen_test::wasm_bindgen_test;
 
 /// Helper: index a single inscription and return (txid_bytes, index)
 fn index_single_text_inscription(height: u32) -> (Vec<u8>, bitcoin::Txid) {
@@ -25,7 +26,7 @@ fn index_single_text_inscription(height: u32) -> (Vec<u8>, bitcoin::Txid) {
     (txid.as_byte_array().to_vec(), txid)
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_view_get_inscription_by_id() {
     state::clear();
     let (txid_bytes, _txid) = index_single_text_inscription(100);
@@ -47,7 +48,7 @@ fn test_view_get_inscription_by_id() {
     assert!(response.satpoint.is_some(), "Satpoint should be set");
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_view_get_inscription_by_number() {
     state::clear();
     let (_txid_bytes, txid) = index_single_text_inscription(100);
@@ -64,7 +65,7 @@ fn test_view_get_inscription_by_number() {
     assert_eq!(resp_id.txid, txid.as_byte_array().to_vec());
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_view_get_inscriptions() {
     state::clear();
     // Index 3 inscriptions
@@ -116,7 +117,7 @@ fn test_view_get_inscriptions() {
     assert_eq!(pagination.total, 3);
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_view_get_content() {
     state::clear();
     let body = b"Content to retrieve via view";
@@ -145,7 +146,7 @@ fn test_view_get_content() {
     );
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_view_get_metadata() {
     state::clear();
     let metadata = b"\xa1\x63key\x63val";
@@ -195,7 +196,7 @@ fn test_view_get_metadata() {
     );
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_view_get_block_hash() {
     state::clear();
     let block = create_block_with_coinbase_tx(300);
@@ -218,7 +219,7 @@ fn test_view_get_block_hash() {
     );
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_view_get_block_info_by_height() {
     state::clear();
     let block = create_block_with_coinbase_tx(400);
@@ -238,7 +239,7 @@ fn test_view_get_block_info_by_height() {
     );
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_view_inscription_not_found() {
     state::clear();
     // Query for a non-existent inscription
@@ -262,7 +263,7 @@ fn test_view_inscription_not_found() {
     );
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_view_get_children() {
     state::clear();
     // First, index a parent inscription
@@ -324,7 +325,7 @@ fn test_view_get_children() {
     }
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_view_get_parents() {
     state::clear();
     // Index parent

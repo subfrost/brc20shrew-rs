@@ -28,13 +28,12 @@ thiserror = { workspace = true }
 lazy_static = { workspace = true }
 prost = { workspace = true }
 sha2 = { workspace = true }
-wasm-bindgen = { workspace = true }
 getrandom = { workspace = true }
 metashrew-core = { workspace = true }
 metashrew-support = { workspace = true }
 
 [dev-dependencies]
-metashrew-core = { git = "https://github.com/sandshrewmetaprotocols/metashrew", features = ["test-utils"], branch = "sandshrewmetadev/v9.1.0", default-features = false }
+metashrew-core = { workspace = true }
 wasm-bindgen-test = { workspace = true }
 shrew-test-helpers = { workspace = true }
 

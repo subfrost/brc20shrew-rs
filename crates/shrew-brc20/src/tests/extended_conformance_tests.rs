@@ -420,7 +420,7 @@ fn test_ticker_exactly_5_bytes() {
 #[test]
 fn test_ticker_exactly_6_bytes() {
     let indexer = Brc20Indexer::new();
-    let content = br#"{"p":"brc-20","op":"deploy","tick":"abcdef","max":"1000","lim":"100"}"#;
+    let content = br#"{"p":"brc-20","op":"deploy","tick":"abcdef","max":"1000","lim":"100","salt":"aa"}"#;
     let result = indexer.parse_operation(content, 912690);
     assert!(result.is_some(), "Exactly 6-byte ticker should be accepted at correct height");
 }
@@ -435,7 +435,7 @@ fn test_ticker_8_char_rejected() {
 #[test]
 fn test_6byte_ticker_all_dashes() {
     let indexer = Brc20Indexer::new();
-    let content = br#"{"p":"brc-20","op":"deploy","tick":"------","max":"1000","lim":"100"}"#;
+    let content = br#"{"p":"brc-20","op":"deploy","tick":"------","max":"1000","lim":"100","salt":"aa"}"#;
     let result = indexer.parse_operation(content, 912690);
     assert!(result.is_some(), "6-byte all-dash ticker should be accepted");
 }
@@ -443,7 +443,7 @@ fn test_6byte_ticker_all_dashes() {
 #[test]
 fn test_6byte_ticker_all_digits() {
     let indexer = Brc20Indexer::new();
-    let content = br#"{"p":"brc-20","op":"deploy","tick":"123456","max":"1000","lim":"100"}"#;
+    let content = br#"{"p":"brc-20","op":"deploy","tick":"123456","max":"1000","lim":"100","salt":"aa"}"#;
     let result = indexer.parse_operation(content, 912690);
     assert!(result.is_some(), "6-byte all-digit ticker should be accepted");
 }
@@ -478,6 +478,7 @@ fn test_mint_multiple_to_same_owner_accumulates() {
         limit_per_mint: 1000 * SCALE,
         decimals: 18,
         self_mint: false,
+        salt: None,
     };
     indexer.process_operation(&deploy, "deploy_0i0", "bc1qowner").unwrap();
 
@@ -501,6 +502,7 @@ fn test_mint_at_exact_limit() {
         limit_per_mint: 1000 * SCALE,
         decimals: 18,
         self_mint: false,
+        salt: None,
     };
     indexer.process_operation(&deploy, "deploy_0i0", "bc1qowner").unwrap();
 
@@ -522,6 +524,7 @@ fn test_mint_one_over_limit_rejected() {
         limit_per_mint: 1000 * SCALE,
         decimals: 18,
         self_mint: false,
+        salt: None,
     };
     indexer.process_operation(&deploy, "deploy_0i0", "bc1qowner").unwrap();
 
@@ -542,6 +545,7 @@ fn test_mint_clamp_one_remaining() {
         limit_per_mint: 1000 * SCALE,
         decimals: 18,
         self_mint: false,
+        salt: None,
     };
     indexer.process_operation(&deploy, "deploy_0i0", "bc1qowner").unwrap();
 
@@ -567,6 +571,7 @@ fn test_mint_after_supply_exhausted_rejected() {
         limit_per_mint: 100 * SCALE,
         decimals: 18,
         self_mint: false,
+        salt: None,
     };
     indexer.process_operation(&deploy, "deploy_0i0", "bc1qowner").unwrap();
 
@@ -593,6 +598,7 @@ fn test_mint_case_insensitive_via_process() {
         limit_per_mint: 1000 * SCALE,
         decimals: 18,
         self_mint: false,
+        salt: None,
     };
     indexer.process_operation(&deploy, "deploy_0i0", "bc1qowner").unwrap();
 
@@ -617,6 +623,7 @@ fn test_transfer_exact_available_balance() {
         limit_per_mint: 1000 * SCALE,
         decimals: 18,
         self_mint: false,
+        salt: None,
     };
     indexer.process_operation(&deploy, "deploy_0i0", "bc1qowner").unwrap();
     let mint = Brc20Operation::Mint { ticker: "ordi".to_string(), amount: 1000 * SCALE };
@@ -641,6 +648,7 @@ fn test_transfer_one_over_available_rejected() {
         limit_per_mint: 1000 * SCALE,
         decimals: 18,
         self_mint: false,
+        salt: None,
     };
     indexer.process_operation(&deploy, "deploy_0i0", "bc1qowner").unwrap();
     let mint = Brc20Operation::Mint { ticker: "ordi".to_string(), amount: 1000 * SCALE };
@@ -665,6 +673,7 @@ fn test_transfer_no_balance_ignored() {
         limit_per_mint: 1000 * SCALE,
         decimals: 18,
         self_mint: false,
+        salt: None,
     };
     indexer.process_operation(&deploy, "deploy_0i0", "bc1qowner").unwrap();
 
@@ -699,6 +708,7 @@ fn test_multiple_transfers_before_claim() {
         limit_per_mint: 1000 * SCALE,
         decimals: 18,
         self_mint: false,
+        salt: None,
     };
     indexer.process_operation(&deploy, "deploy_0i0", "bc1qowner").unwrap();
     let mint = Brc20Operation::Mint { ticker: "ordi".to_string(), amount: 1000 * SCALE };
@@ -729,6 +739,7 @@ fn test_transfer_exceeds_available_after_pending() {
         limit_per_mint: 1000 * SCALE,
         decimals: 18,
         self_mint: false,
+        salt: None,
     };
     indexer.process_operation(&deploy, "deploy_0i0", "bc1qowner").unwrap();
     let mint = Brc20Operation::Mint { ticker: "ordi".to_string(), amount: 1000 * SCALE };
@@ -761,6 +772,7 @@ fn test_claim_to_recipient_with_existing_balance() {
         limit_per_mint: 1000 * SCALE,
         decimals: 18,
         self_mint: false,
+        salt: None,
     };
     indexer.process_operation(&deploy, "deploy_0i0", "bc1qdeployer").unwrap();
 
@@ -795,6 +807,7 @@ fn test_claim_to_new_address() {
         limit_per_mint: 1000 * SCALE,
         decimals: 18,
         self_mint: false,
+        salt: None,
     };
     indexer.process_operation(&deploy, "deploy_0i0", "bc1qdeployer").unwrap();
     let mint = Brc20Operation::Mint { ticker: "ordi".to_string(), amount: 1000 * SCALE };
@@ -825,6 +838,7 @@ fn test_claim_multiple_transfers_sequentially() {
         limit_per_mint: 1000 * SCALE,
         decimals: 18,
         self_mint: false,
+        salt: None,
     };
     indexer.process_operation(&deploy, "deploy_0i0", "bc1qdeployer").unwrap();
     let mint = Brc20Operation::Mint { ticker: "ordi".to_string(), amount: 1000 * SCALE };
@@ -885,7 +899,7 @@ fn test_5byte_at_exact_boundary_837090() {
 #[test]
 fn test_6byte_at_exact_boundary_912690() {
     let indexer = Brc20Indexer::new();
-    let content = br#"{"p":"brc-20","op":"deploy","tick":"abcdef","max":"1000","lim":"100"}"#;
+    let content = br#"{"p":"brc-20","op":"deploy","tick":"abcdef","max":"1000","lim":"100","salt":"aa"}"#;
     assert!(indexer.parse_operation(content, 912690).is_some(),
         "6-byte should work at exact height 912690");
     assert!(indexer.parse_operation(content, 912689).is_none(),
@@ -947,6 +961,7 @@ fn test_deploy_duplicate_ticker_ignored() {
         limit_per_mint: 1000 * SCALE,
         decimals: 18,
         self_mint: false,
+        salt: None,
     };
     indexer.process_operation(&deploy1, "first_0i0", "bc1qa").unwrap();
 
@@ -956,6 +971,7 @@ fn test_deploy_duplicate_ticker_ignored() {
         limit_per_mint: 1 * SCALE,
         decimals: 8,
         self_mint: false,
+        salt: None,
     };
     indexer.process_operation(&deploy2, "second_0i0", "bc1qb").unwrap();
 
@@ -978,6 +994,7 @@ fn test_deploy_case_insensitive_dedup_via_process() {
         limit_per_mint: 1000 * SCALE,
         decimals: 18,
         self_mint: false,
+        salt: None,
     };
     indexer.process_operation(&deploy1, "first_0i0", "bc1qa").unwrap();
 
@@ -988,6 +1005,7 @@ fn test_deploy_case_insensitive_dedup_via_process() {
         limit_per_mint: 1 * SCALE,
         decimals: 8,
         self_mint: false,
+        salt: None,
     };
     indexer.process_operation(&deploy2, "second_0i0", "bc1qb").unwrap();
 
@@ -1012,6 +1030,7 @@ fn test_lifecycle_deploy_mint_multitransfer_claim() {
         limit_per_mint: 1000 * SCALE,
         decimals: 18,
         self_mint: false,
+        salt: None,
     };
     indexer.process_operation(&deploy, "deploy_0i0", "bc1qdeployer").unwrap();
 
@@ -1057,6 +1076,7 @@ fn test_lifecycle_chain_of_transfers() {
         limit_per_mint: 1000 * SCALE,
         decimals: 18,
         self_mint: false,
+        salt: None,
     };
     indexer.process_operation(&deploy, "deploy_0i0", "bc1qdeployer").unwrap();
 

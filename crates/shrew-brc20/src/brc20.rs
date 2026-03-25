@@ -3,7 +3,7 @@ use anyhow::Result;
 use crate::tables::*;
 use shrew_support::inscription::{InscriptionEntry, InscriptionId};
 use shrew_support::utils::get_address_from_txout;
-use shrew_support::constants::{BRC20_SELF_MINT_ENABLE_HEIGHT, BRC20_PROG_PHASE_ONE_HEIGHT};
+use shrew_support::constants::{BRC20_SELF_MINT_ENABLE_HEIGHT, BRC20_PROG_PHASE_ONE_HEIGHT, BRC20_PREDEPLOY_ACTIVATION_HEIGHT};
 use shrew_ord::tables::{
     INSCRIPTION_ID_TO_SEQUENCE, SEQUENCE_TO_INSCRIPTION_ENTRY,
     OUTPOINT_TO_INSCRIPTIONS, INSCRIPTION_CONTENT,
@@ -50,6 +50,8 @@ pub enum Brc20Operation {
         limit_per_mint: u128,
         decimals: u8,
         self_mint: bool,
+        #[serde(default)]
+        salt: Option<String>,
     },
     Mint {
         ticker: String,
@@ -58,6 +60,9 @@ pub enum Brc20Operation {
     Transfer {
         ticker: String,
         amount: u128,
+    },
+    Predeploy {
+        hash: String,
     },
 }
 
@@ -341,6 +346,15 @@ impl Brc20Indexer {
         if protocol != "brc-20" { return None; }
 
         let op = json.get("op")?.as_str()?;
+
+        // Handle predeploy before ticker extraction (predeploy has no tick field)
+        if op == "predeploy" {
+            let hash = json.get("hash")?.as_str()?.to_string();
+            if hash.is_empty() { return None; }
+            if height < BRC20_PREDEPLOY_ACTIVATION_HEIGHT { return None; }
+            return Some(Brc20Operation::Predeploy { hash });
+        }
+
         let raw_ticker = json.get("tick")?.as_str()?;
 
         // Validate and normalize ticker
@@ -361,13 +375,18 @@ impl Brc20Indexer {
         match op {
             "deploy" => {
                 // Determine if this is a self-mint deploy
-                let is_self_mint = ticker_byte_len == 5;
-
-                // 5-byte tickers require "self_mint": "true" in the JSON
-                if is_self_mint {
-                    let self_mint_val = json.get("self_mint").and_then(|v| v.as_str());
+                // 5-byte tickers are always self-mint; 6-byte tickers can optionally be self-mint
+                let self_mint_val = json.get("self_mint").and_then(|v| v.as_str());
+                let is_self_mint = if ticker_byte_len == 5 {
+                    // 5-byte tickers require "self_mint": "true"
                     if self_mint_val != Some("true") { return None; }
-                }
+                    true
+                } else if ticker_byte_len == 6 {
+                    // 6-byte tickers: self_mint is optional
+                    self_mint_val == Some("true")
+                } else {
+                    false
+                };
 
                 // Parse decimals FIRST — needed for validating max/lim precision
                 let decimals = json.get("dec")
@@ -404,7 +423,13 @@ impl Brc20Indexer {
                     max_supply
                 };
 
-                Some(Brc20Operation::Deploy { ticker, max_supply, limit_per_mint, decimals, self_mint: is_self_mint })
+                // For 6-byte tickers, salt is required
+                let salt = json.get("salt").and_then(|v| v.as_str()).map(|s| s.to_string());
+                if ticker_byte_len == 6 && salt.is_none() {
+                    return None; // 6-byte deploy requires salt
+                }
+
+                Some(Brc20Operation::Deploy { ticker, max_supply, limit_per_mint, decimals, self_mint: is_self_mint, salt })
             }
             "mint" => {
                 let amt_str = json.get("amt")?.as_str()?;
@@ -434,7 +459,15 @@ impl Brc20Indexer {
 
     pub fn process_operation(&self, operation: &Brc20Operation, inscription_id: &str, owner: &str) -> Result<()> {
         match operation {
-            Brc20Operation::Deploy { ticker, max_supply, limit_per_mint, decimals, self_mint } => {
+            Brc20Operation::Predeploy { hash } => {
+                // Store the predeploy inscription: maps inscription_id -> (hash, pkscript)
+                let predeploy_data = serde_json::to_vec(&PredeployInfo {
+                    hash: hash.clone(),
+                    deployer_pkscript: owner.to_string(),
+                })?;
+                Brc20Predeploys::new().set(inscription_id, &predeploy_data);
+            }
+            Brc20Operation::Deploy { ticker, max_supply, limit_per_mint, decimals, self_mint, .. } => {
                 // Normalize ticker to lowercase for storage/lookup
                 let ticker = ticker.to_lowercase();
                 let tickers_table = Brc20Tickers::new();
@@ -619,4 +652,74 @@ impl Brc20Indexer {
         // Normal address
         TransferDestination::Wallet(pkscript_hex.to_string())
     }
+
+    /// Validate and process a 6-byte ticker deploy with predeploy snipe protection.
+    ///
+    /// Validation rules:
+    /// 1. Deploy must reference a predeploy as parent
+    /// 2. Hash must match: sha256(sha256(ticker_utf8 + salt_hex + deployer_pkscript_hex))
+    /// 3. Deploy must be at least 3 blocks after the predeploy
+    pub fn process_6byte_deploy(
+        &self,
+        operation: &Brc20Operation,
+        inscription_id: &str,
+        deployer_pkscript: &str,
+        predeploy_parent_id: Option<&str>,
+        deploy_height: u32,
+        predeploy_height: u32,
+    ) -> Result<()> {
+        let (ticker, salt) = match operation {
+            Brc20Operation::Deploy { ticker, salt, .. } => {
+                (ticker.clone(), salt.clone().ok_or_else(|| anyhow::anyhow!("6-byte deploy requires salt"))?)
+            }
+            _ => return Err(anyhow::anyhow!("Expected Deploy operation")),
+        };
+
+        // Rule 1: Must have predeploy parent
+        let parent_id = predeploy_parent_id
+            .ok_or_else(|| anyhow::anyhow!("6-byte deploy requires predeploy parent inscription"))?;
+
+        // Rule 3: 3-block delay
+        if deploy_height < predeploy_height + 3 {
+            return Err(anyhow::anyhow!("6-byte deploy must be at least 3 blocks after predeploy"));
+        }
+
+        // Fetch predeploy info
+        let predeploy_data = Brc20Predeploys::new().get(parent_id)
+            .ok_or_else(|| anyhow::anyhow!("Predeploy inscription not found: {}", parent_id))?;
+        let predeploy_info: PredeployInfo = serde_json::from_slice(&predeploy_data)?;
+
+        // Rule 2: Hash verification
+        let expected_hash = compute_predeploy_hash(&ticker, &salt, &predeploy_info.deployer_pkscript)
+            .ok_or_else(|| anyhow::anyhow!("Invalid salt hex in deploy"))?;
+        if expected_hash != predeploy_info.hash {
+            return Err(anyhow::anyhow!("Predeploy hash mismatch: expected {}, got {}", predeploy_info.hash, expected_hash));
+        }
+
+        // All validation passed — process the deploy via normal path
+        self.process_operation(operation, inscription_id, deployer_pkscript)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PredeployInfo {
+    pub hash: String,
+    pub deployer_pkscript: String,
+}
+
+/// Compute the predeploy hash: sha256(sha256(ticker_utf8 + salt_hex_decoded + pkscript_hex_decoded))
+pub fn compute_predeploy_hash(ticker: &str, salt_hex: &str, pkscript_hex: &str) -> Option<String> {
+    use sha2::{Sha256, Digest};
+
+    let salt_bytes = hex::decode(salt_hex).ok()?;
+    let pkscript_bytes = hex::decode(pkscript_hex).ok()?;
+
+    let mut data = Vec::new();
+    data.extend_from_slice(ticker.as_bytes());
+    data.extend_from_slice(&salt_bytes);
+    data.extend_from_slice(&pkscript_bytes);
+
+    let first = Sha256::digest(&data);
+    let second = Sha256::digest(&first);
+    Some(hex::encode(second))
 }

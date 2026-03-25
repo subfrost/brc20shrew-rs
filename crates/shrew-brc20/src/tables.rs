@@ -10,6 +10,7 @@ lazy_static::lazy_static! {
     /// Pending BRC20-PROG deposit events. Written by BRC-20 indexer, consumed by prog indexer.
     /// Key: height (u32 LE), Value: JSON array of DepositEvent
     pub static ref BRC20_PROG_PENDING_DEPOSITS: IndexPointer = IndexPointer::from_keyword("/brc20/prog_deposits/");
+    pub static ref BRC20_PREDEPLOYS: IndexPointer = IndexPointer::from_keyword("/brc20/predeploys/");
 }
 
 /// A pending BRC20-PROG deposit event. Recorded when tokens are sent to the
@@ -64,6 +65,7 @@ impl Brc20ProgDeposits {
 pub struct Brc20Tickers;
 pub struct Brc20Balances;
 pub struct Brc20EventsTable;
+pub struct Brc20Predeploys;
 pub struct Brc20TransferableInscriptions;
 
 impl Brc20Tickers {
@@ -120,6 +122,19 @@ impl Brc20EventsTable {
     }
     pub fn set(&self, tx_id: &str, data: &[u8]) {
         let mut pointer = BRC20_EVENTS.select(&tx_id.as_bytes().to_vec());
+        pointer.set(Arc::new(data.to_vec()));
+    }
+}
+
+impl Brc20Predeploys {
+    pub fn new() -> Self { Self }
+    pub fn get(&self, inscription_id: &str) -> Option<Vec<u8>> {
+        let pointer = BRC20_PREDEPLOYS.select(&inscription_id.as_bytes().to_vec());
+        let result = pointer.get();
+        if result.is_empty() { None } else { Some((*result).clone()) }
+    }
+    pub fn set(&self, inscription_id: &str, data: &[u8]) {
+        let mut pointer = BRC20_PREDEPLOYS.select(&inscription_id.as_bytes().to_vec());
         pointer.set(Arc::new(data.to_vec()));
     }
 }

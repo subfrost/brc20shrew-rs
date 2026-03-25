@@ -29,7 +29,7 @@ impl InscriptionIndexer {
             network: Network::Bitcoin,
             sequence_counter: 0,
             blessed_counter: 0,
-            cursed_counter: -1,
+            cursed_counter: 0,
             jubilee_height: shrew_support::constants::JUBILEE_HEIGHT,
         }
     }
@@ -139,7 +139,12 @@ impl InscriptionIndexer {
             return Err(IndexError::DuplicateInscription);
         }
 
-        let is_cursed = envelope.payload.is_cursed() || self.is_cursed_by_context(envelope, tx_index);
+        // Detect reinscription: check if the input's previous_output already has inscriptions
+        let is_reinscription = self.is_reinscription(tx, envelope);
+
+        let is_cursed = envelope.payload.is_cursed()
+            || self.is_cursed_by_context(envelope, tx_index)
+            || is_reinscription;
         let number = if is_cursed && self.height < self.jubilee_height {
             self.cursed_counter -= 1;
             self.cursed_counter
@@ -176,7 +181,14 @@ impl InscriptionIndexer {
             }
         }
 
-        if is_cursed { entry.set_charm(Charm::Cursed); }
+        if is_reinscription { entry.set_charm(Charm::Reinscription); }
+        if is_cursed {
+            if self.height < self.jubilee_height {
+                entry.set_charm(Charm::Cursed);
+            } else {
+                entry.set_charm(Charm::Vindicated);
+            }
+        }
         if envelope.payload.body.is_none() { entry.set_charm(Charm::Unbound); }
 
         self.store_inscription(&entry, envelope)?;
@@ -236,6 +248,22 @@ impl InscriptionIndexer {
         }
 
         Ok(())
+    }
+
+    /// Detect if this inscription is a reinscription: the input's previous_output
+    /// already has one or more inscriptions on it.
+    fn is_reinscription(&self, tx: &Transaction, envelope: &Envelope) -> bool {
+        if envelope.input >= tx.input.len() {
+            return false;
+        }
+        let prev_outpoint = &tx.input[envelope.input].previous_output;
+        let outpoint_bytes: Vec<u8> = prev_outpoint.txid.as_byte_array()
+            .iter()
+            .chain(prev_outpoint.vout.to_le_bytes().iter())
+            .copied()
+            .collect();
+        let existing = OUTPOINT_TO_INSCRIPTIONS.select(&outpoint_bytes).get_list();
+        !existing.is_empty()
     }
 
     fn is_cursed_by_context(&self, _envelope: &Envelope, tx_index: usize) -> bool {

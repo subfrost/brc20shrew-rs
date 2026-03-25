@@ -3,6 +3,7 @@ use crate::brc20::{Brc20Indexer, Brc20Operation, Ticker, TransferInfo};
 use crate::tables::{Brc20Tickers, Brc20Balances, Brc20TransferableInscriptions};
 use shrew_test_helpers::state::clear;
 use shrew_test_helpers::assertions::{assert_brc20_balance, assert_brc20_supply};
+use wasm_bindgen_test::wasm_bindgen_test;
 
 const SCALE: u128 = 1_000_000_000_000_000_000u128; // 10^18
 
@@ -10,7 +11,7 @@ const SCALE: u128 = 1_000_000_000_000_000_000u128; // 10^18
 // Deploy tests
 // ---------------------------------------------------------------------------
 
-#[test]
+#[wasm_bindgen_test]
 fn test_deploy_creates_ticker() {
     clear();
     let indexer = Brc20Indexer::new();
@@ -20,6 +21,7 @@ fn test_deploy_creates_ticker() {
         limit_per_mint: 1000 * SCALE,
         decimals: 18,
         self_mint: false,
+        salt: None,
     };
     indexer.process_operation(&op, "fake_inscription_id_0i0", "bc1qtest").unwrap();
 
@@ -34,7 +36,7 @@ fn test_deploy_creates_ticker() {
     assert_eq!(ticker.deploy_inscription_id, "fake_inscription_id_0i0");
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_deploy_first_wins() {
     clear();
     let indexer = Brc20Indexer::new();
@@ -44,6 +46,7 @@ fn test_deploy_first_wins() {
         limit_per_mint: 1000 * SCALE,
         decimals: 18,
         self_mint: false,
+        salt: None,
     };
     let op2 = Brc20Operation::Deploy {
         ticker: "ordi".to_string(),
@@ -51,6 +54,7 @@ fn test_deploy_first_wins() {
         limit_per_mint: 5000 * SCALE,
         decimals: 8,
         self_mint: false,
+        salt: None,
     };
     indexer.process_operation(&op1, "first_deploy_0i0", "bc1qfirst").unwrap();
     indexer.process_operation(&op2, "second_deploy_0i0", "bc1qsecond").unwrap();
@@ -61,7 +65,7 @@ fn test_deploy_first_wins() {
     assert_eq!(ticker.deploy_inscription_id, "first_deploy_0i0");
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_deploy_case_insensitive() {
     // BRC-20 tickers are CASE-INSENSITIVE per OPI spec.
     // "ORDI" and "ordi" refer to the same ticker.
@@ -74,6 +78,7 @@ fn test_deploy_case_insensitive() {
         limit_per_mint: 1000 * SCALE,
         decimals: 18,
         self_mint: false,
+        salt: None,
     };
     let op_upper = Brc20Operation::Deploy {
         ticker: "ordi".to_string(), // Already lowercase (parse_operation normalizes)
@@ -81,6 +86,7 @@ fn test_deploy_case_insensitive() {
         limit_per_mint: 500 * SCALE,
         decimals: 8,
         self_mint: false,
+        salt: None,
     };
     indexer.process_operation(&op_lower, "lower_0i0", "bc1qa").unwrap();
     indexer.process_operation(&op_upper, "upper_0i0", "bc1qb").unwrap();
@@ -96,7 +102,7 @@ fn test_deploy_case_insensitive() {
 // Mint tests
 // ---------------------------------------------------------------------------
 
-#[test]
+#[wasm_bindgen_test]
 fn test_mint_increases_supply() {
     clear();
     let indexer = Brc20Indexer::new();
@@ -106,6 +112,7 @@ fn test_mint_increases_supply() {
         limit_per_mint: 1000 * SCALE,
         decimals: 18,
         self_mint: false,
+        salt: None,
     };
     indexer.process_operation(&deploy, "deploy_0i0", "bc1qowner").unwrap();
 
@@ -118,7 +125,7 @@ fn test_mint_increases_supply() {
     assert_brc20_supply("ordi", 500 * SCALE);
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_mint_increases_balance() {
     clear();
     let indexer = Brc20Indexer::new();
@@ -128,6 +135,7 @@ fn test_mint_increases_balance() {
         limit_per_mint: 1000 * SCALE,
         decimals: 18,
         self_mint: false,
+        salt: None,
     };
     indexer.process_operation(&deploy, "deploy_0i0", "bc1qowner").unwrap();
 
@@ -140,7 +148,7 @@ fn test_mint_increases_balance() {
     assert_brc20_balance("bc1qminter", "ordi", 750 * SCALE, 750 * SCALE);
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_mint_exceeds_limit_rejected() {
     clear();
     let indexer = Brc20Indexer::new();
@@ -150,6 +158,7 @@ fn test_mint_exceeds_limit_rejected() {
         limit_per_mint: 1000 * SCALE,
         decimals: 18,
         self_mint: false,
+        salt: None,
     };
     indexer.process_operation(&deploy, "deploy_0i0", "bc1qowner").unwrap();
 
@@ -164,7 +173,7 @@ fn test_mint_exceeds_limit_rejected() {
     assert!(balance.is_none(), "Balance should not exist for rejected mint");
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_mint_exceeds_max_supply_clamped() {
     clear();
     let indexer = Brc20Indexer::new();
@@ -174,6 +183,7 @@ fn test_mint_exceeds_max_supply_clamped() {
         limit_per_mint: 800 * SCALE,
         decimals: 18,
         self_mint: false,
+        salt: None,
     };
     indexer.process_operation(&deploy, "deploy_0i0", "bc1qowner").unwrap();
 
@@ -190,7 +200,7 @@ fn test_mint_exceeds_max_supply_clamped() {
     assert_brc20_balance("bc1qminter", "ordi", 1000 * SCALE, 1000 * SCALE);
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_mint_nonexistent_ticker_ignored() {
     clear();
     let indexer = Brc20Indexer::new();
@@ -210,7 +220,7 @@ fn test_mint_nonexistent_ticker_ignored() {
 // Transfer tests
 // ---------------------------------------------------------------------------
 
-#[test]
+#[wasm_bindgen_test]
 fn test_transfer_inscribe_reduces_available() {
     clear();
     let indexer = Brc20Indexer::new();
@@ -221,6 +231,7 @@ fn test_transfer_inscribe_reduces_available() {
         limit_per_mint: 1000 * SCALE,
         decimals: 18,
         self_mint: false,
+        salt: None,
     };
     indexer.process_operation(&deploy, "deploy_0i0", "bc1qowner").unwrap();
     let mint = Brc20Operation::Mint { ticker: "ordi".to_string(), amount: 1000 * SCALE };
@@ -235,7 +246,7 @@ fn test_transfer_inscribe_reduces_available() {
     assert!(transferable.is_some(), "Transferable inscription should be recorded");
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_transfer_inscribe_insufficient_balance_ignored() {
     clear();
     let indexer = Brc20Indexer::new();
@@ -246,6 +257,7 @@ fn test_transfer_inscribe_insufficient_balance_ignored() {
         limit_per_mint: 1000 * SCALE,
         decimals: 18,
         self_mint: false,
+        salt: None,
     };
     indexer.process_operation(&deploy, "deploy_0i0", "bc1qowner").unwrap();
     let mint = Brc20Operation::Mint { ticker: "ordi".to_string(), amount: 100 * SCALE };
@@ -260,7 +272,7 @@ fn test_transfer_inscribe_insufficient_balance_ignored() {
     assert!(transferable.is_none(), "Transfer should not be recorded when balance insufficient");
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_transfer_claim_moves_balance() {
     clear();
     let indexer = Brc20Indexer::new();
@@ -271,6 +283,7 @@ fn test_transfer_claim_moves_balance() {
         limit_per_mint: 1000 * SCALE,
         decimals: 18,
         self_mint: false,
+        salt: None,
     };
     indexer.process_operation(&deploy, "deploy_0i0", "bc1qdeployer").unwrap();
 

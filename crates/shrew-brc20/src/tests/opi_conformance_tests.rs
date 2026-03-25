@@ -10,6 +10,7 @@ use wasm_bindgen_test::wasm_bindgen_test as test;
 use crate::brc20::{Brc20Indexer, Brc20Operation, Ticker, Balance};
 use crate::tables::{Brc20Tickers, Brc20Balances, Brc20TransferableInscriptions};
 use shrew_test_helpers::state::clear;
+use wasm_bindgen_test::wasm_bindgen_test;
 
 // ============================================================================
 // ISSUE 1: Decimal amount parsing
@@ -18,7 +19,7 @@ use shrew_test_helpers::state::clear;
 // silently drops any inscription with decimal amounts.
 // ============================================================================
 
-#[test]
+#[wasm_bindgen_test]
 fn test_parse_decimal_amount_mint() {
     let indexer = Brc20Indexer::new();
     let content = br#"{ "p": "brc-20", "op": "mint", "tick": "ordi", "amt": "500.5" }"#;
@@ -26,7 +27,7 @@ fn test_parse_decimal_amount_mint() {
     assert!(result.is_some(), "Decimal amount '500.5' should be parseable");
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_parse_decimal_amount_deploy() {
     let indexer = Brc20Indexer::new();
     let content = br#"{ "p": "brc-20", "op": "deploy", "tick": "test", "max": "21000000.0", "lim": "1000.0" }"#;
@@ -34,7 +35,7 @@ fn test_parse_decimal_amount_deploy() {
     assert!(result.is_some(), "Decimal deploy amounts should be parseable");
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_parse_amount_too_many_decimals_rejected() {
     let indexer = Brc20Indexer::new();
     // 19 decimal places exceeds max of 18
@@ -43,7 +44,7 @@ fn test_parse_amount_too_many_decimals_rejected() {
     assert!(result.is_none(), "Amount with >18 decimals should be rejected");
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_parse_integer_amount_still_works() {
     let indexer = Brc20Indexer::new();
     let content = br#"{ "p": "brc-20", "op": "mint", "tick": "ordi", "amt": "1000" }"#;
@@ -57,7 +58,7 @@ fn test_parse_integer_amount_still_works() {
 // OPI lowercases all tickers. "ORDI" and "ordi" are the same ticker.
 // ============================================================================
 
-#[test]
+#[wasm_bindgen_test]
 fn test_ticker_case_insensitive_deploy_dedup() {
     clear();
     let indexer = Brc20Indexer::new();
@@ -69,6 +70,7 @@ fn test_ticker_case_insensitive_deploy_dedup() {
         limit_per_mint: 1000,
         decimals: 18,
         self_mint: false,
+        salt: None,
     };
     indexer.process_operation(&op1, "first_deploy_0i0", "bc1qfirst").unwrap();
 
@@ -79,6 +81,7 @@ fn test_ticker_case_insensitive_deploy_dedup() {
         limit_per_mint: 5000,
         decimals: 8,
         self_mint: false,
+        salt: None,
     };
     indexer.process_operation(&op2, "second_deploy_0i0", "bc1qsecond").unwrap();
 
@@ -101,7 +104,7 @@ fn test_ticker_case_insensitive_deploy_dedup() {
     // If get("ORDI") returns None, that's also correct as long as no separate ticker exists.
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_ticker_case_insensitive_mint() {
     clear();
     let indexer = Brc20Indexer::new();
@@ -113,6 +116,7 @@ fn test_ticker_case_insensitive_mint() {
         limit_per_mint: 1000,
         decimals: 18,
         self_mint: false,
+        salt: None,
     };
     indexer.process_operation(&deploy, "deploy_0i0", "bc1qowner").unwrap();
 
@@ -134,7 +138,7 @@ fn test_ticker_case_insensitive_mint() {
 // ISSUE 3: Protocol field ("p": "brc-20") validation
 // ============================================================================
 
-#[test]
+#[wasm_bindgen_test]
 fn test_reject_missing_protocol_field() {
     let indexer = Brc20Indexer::new();
     let content = br#"{ "op": "deploy", "tick": "fake", "max": "1000", "lim": "100" }"#;
@@ -142,7 +146,7 @@ fn test_reject_missing_protocol_field() {
     assert!(result.is_none(), "Missing 'p' field should be rejected");
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_reject_wrong_protocol_field() {
     let indexer = Brc20Indexer::new();
     let content = br#"{ "p": "brc-21", "op": "deploy", "tick": "fake", "max": "1000", "lim": "100" }"#;
@@ -150,7 +154,7 @@ fn test_reject_wrong_protocol_field() {
     assert!(result.is_none(), "Wrong protocol 'brc-21' should be rejected");
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_accept_correct_protocol_field() {
     let indexer = Brc20Indexer::new();
     let content = br#"{ "p": "brc-20", "op": "deploy", "tick": "ordi", "max": "21000000", "lim": "1000" }"#;
@@ -162,35 +166,35 @@ fn test_accept_correct_protocol_field() {
 // ISSUE 4: Ticker length validation
 // ============================================================================
 
-#[test]
+#[wasm_bindgen_test]
 fn test_reject_1_char_ticker() {
     let indexer = Brc20Indexer::new();
     let content = br#"{ "p": "brc-20", "op": "deploy", "tick": "a", "max": "1000", "lim": "100" }"#;
     assert!(indexer.parse_operation(content, 840000).is_none(), "1-char ticker should be rejected");
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_reject_3_char_ticker() {
     let indexer = Brc20Indexer::new();
     let content = br#"{ "p": "brc-20", "op": "deploy", "tick": "abc", "max": "1000", "lim": "100" }"#;
     assert!(indexer.parse_operation(content, 840000).is_none(), "3-char ticker should be rejected");
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_accept_4_char_ticker() {
     let indexer = Brc20Indexer::new();
     let content = br#"{ "p": "brc-20", "op": "deploy", "tick": "ordi", "max": "21000000", "lim": "1000" }"#;
     assert!(indexer.parse_operation(content, 840000).is_some(), "4-char ticker should be accepted");
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_reject_7_char_ticker() {
     let indexer = Brc20Indexer::new();
     let content = br#"{ "p": "brc-20", "op": "deploy", "tick": "toolong", "max": "1000", "lim": "100" }"#;
     assert!(indexer.parse_operation(content, 840000).is_none(), "7-char ticker should be rejected");
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_reject_ticker_with_null_byte() {
     let indexer = Brc20Indexer::new();
     let content = b"{ \"p\": \"brc-20\", \"op\": \"deploy\", \"tick\": \"or\x00i\", \"max\": \"1000\", \"lim\": \"100\" }";
@@ -201,7 +205,7 @@ fn test_reject_ticker_with_null_byte() {
 // ISSUE 5: Partial mint clamping
 // ============================================================================
 
-#[test]
+#[wasm_bindgen_test]
 fn test_partial_mint_clamps_to_remaining() {
     clear();
     let indexer = Brc20Indexer::new();
@@ -212,6 +216,7 @@ fn test_partial_mint_clamps_to_remaining() {
         limit_per_mint: 800,
         decimals: 18,
         self_mint: false,
+        salt: None,
     };
     indexer.process_operation(&deploy, "deploy_0i0", "bc1qowner").unwrap();
 
@@ -239,7 +244,7 @@ fn test_partial_mint_clamps_to_remaining() {
 // ISSUE 6: Zero amount rejection
 // ============================================================================
 
-#[test]
+#[wasm_bindgen_test]
 fn test_reject_zero_mint_amount() {
     clear();
     let indexer = Brc20Indexer::new();
@@ -250,6 +255,7 @@ fn test_reject_zero_mint_amount() {
         limit_per_mint: 1000,
         decimals: 18,
         self_mint: false,
+        salt: None,
     };
     indexer.process_operation(&deploy, "deploy_0i0", "bc1qowner").unwrap();
 
@@ -264,7 +270,7 @@ fn test_reject_zero_mint_amount() {
     assert!(balance.is_none(), "No balance should exist for zero mint");
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_reject_zero_transfer_amount() {
     clear();
     let indexer = Brc20Indexer::new();
@@ -275,6 +281,7 @@ fn test_reject_zero_transfer_amount() {
         limit_per_mint: 1000,
         decimals: 18,
         self_mint: false,
+        salt: None,
     };
     indexer.process_operation(&deploy, "deploy_0i0", "bc1qowner").unwrap();
 
@@ -292,7 +299,7 @@ fn test_reject_zero_transfer_amount() {
 // ISSUE 7: MAX_AMOUNT overflow protection
 // ============================================================================
 
-#[test]
+#[wasm_bindgen_test]
 fn test_reject_amount_exceeding_max() {
     let indexer = Brc20Indexer::new();
     let content = br#"{ "p": "brc-20", "op": "deploy", "tick": "huge", "max": "999999999999999999999999999999999999999", "lim": "1" }"#;
@@ -304,7 +311,7 @@ fn test_reject_amount_exceeding_max() {
 // ISSUE 8: lim defaults to max_supply when absent
 // ============================================================================
 
-#[test]
+#[wasm_bindgen_test]
 fn test_deploy_lim_defaults_to_max() {
     let indexer = Brc20Indexer::new();
     let content = br#"{ "p": "brc-20", "op": "deploy", "tick": "ordi", "max": "21000000" }"#;
@@ -323,21 +330,21 @@ fn test_deploy_lim_defaults_to_max() {
 // ISSUE 9: Negative / invalid number rejection
 // ============================================================================
 
-#[test]
+#[wasm_bindgen_test]
 fn test_reject_negative_amount() {
     let indexer = Brc20Indexer::new();
     let content = br#"{ "p": "brc-20", "op": "mint", "tick": "ordi", "amt": "-100" }"#;
     assert!(indexer.parse_operation(content, 840000).is_none(), "Negative amount should be rejected");
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_reject_leading_dot_amount() {
     let indexer = Brc20Indexer::new();
     let content = br#"{ "p": "brc-20", "op": "mint", "tick": "ordi", "amt": ".5" }"#;
     assert!(indexer.parse_operation(content, 840000).is_none(), "Leading dot should be rejected");
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_reject_trailing_dot_amount() {
     let indexer = Brc20Indexer::new();
     let content = br#"{ "p": "brc-20", "op": "mint", "tick": "ordi", "amt": "100." }"#;
@@ -348,14 +355,14 @@ fn test_reject_trailing_dot_amount() {
 // ISSUE 10: Decimals validation
 // ============================================================================
 
-#[test]
+#[wasm_bindgen_test]
 fn test_reject_decimals_over_18() {
     let indexer = Brc20Indexer::new();
     let content = br#"{ "p": "brc-20", "op": "deploy", "tick": "test", "max": "1000", "lim": "100", "dec": "19" }"#;
     assert!(indexer.parse_operation(content, 840000).is_none(), "Decimals > 18 should be rejected");
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_accept_decimals_0() {
     let indexer = Brc20Indexer::new();
     let content = br#"{ "p": "brc-20", "op": "deploy", "tick": "sats", "max": "2100000000000000", "lim": "100000000", "dec": "0" }"#;
@@ -371,7 +378,7 @@ fn test_accept_decimals_0() {
 // ISSUE 11: Zero max_supply rejection (non-self-mint)
 // ============================================================================
 
-#[test]
+#[wasm_bindgen_test]
 fn test_reject_zero_max_supply_deploy() {
     let indexer = Brc20Indexer::new();
     let content = br#"{ "p": "brc-20", "op": "deploy", "tick": "test", "max": "0", "lim": "100" }"#;
@@ -384,7 +391,7 @@ fn test_reject_zero_max_supply_deploy() {
 // (These verify we don't regress working behavior)
 // ============================================================================
 
-#[test]
+#[wasm_bindgen_test]
 fn test_regression_deploy_first_wins() {
     clear();
     let indexer = Brc20Indexer::new();
@@ -394,6 +401,7 @@ fn test_regression_deploy_first_wins() {
         limit_per_mint: 1000,
         decimals: 18,
         self_mint: false,
+        salt: None,
     };
     let op2 = Brc20Operation::Deploy {
         ticker: "ordi".to_string(),
@@ -401,6 +409,7 @@ fn test_regression_deploy_first_wins() {
         limit_per_mint: 5000,
         decimals: 8,
         self_mint: false,
+        salt: None,
     };
     indexer.process_operation(&op1, "first_0i0", "bc1qa").unwrap();
     indexer.process_operation(&op2, "second_0i0", "bc1qb").unwrap();
@@ -410,7 +419,7 @@ fn test_regression_deploy_first_wins() {
     assert_eq!(ticker.max_supply, 21_000_000, "First deploy should win");
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_regression_mint_exceeds_limit_rejected() {
     clear();
     let indexer = Brc20Indexer::new();
@@ -420,6 +429,7 @@ fn test_regression_mint_exceeds_limit_rejected() {
         limit_per_mint: 1000,
         decimals: 18,
         self_mint: false,
+        salt: None,
     };
     indexer.process_operation(&deploy, "deploy_0i0", "bc1qowner").unwrap();
 
@@ -431,7 +441,7 @@ fn test_regression_mint_exceeds_limit_rejected() {
     assert_eq!(ticker.current_supply, 0, "Mint exceeding limit should be rejected");
 }
 
-#[test]
+#[wasm_bindgen_test]
 fn test_regression_transfer_insufficient_balance_rejected() {
     clear();
     let indexer = Brc20Indexer::new();
@@ -442,6 +452,7 @@ fn test_regression_transfer_insufficient_balance_rejected() {
         limit_per_mint: 1000,
         decimals: 18,
         self_mint: false,
+        salt: None,
     };
     indexer.process_operation(&deploy, "deploy_0i0", "bc1qowner").unwrap();
 
