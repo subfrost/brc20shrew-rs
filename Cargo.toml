@@ -51,8 +51,8 @@ wasm-bindgen-test = "0.3"
 getrandom = "0.2"
 
 # Metashrew
-metashrew-core = { git = "https://github.com/sandshrewmetaprotocols/metashrew", branch = "sandshrewmetadev/v9.1.0", default-features = false }
-metashrew-support = { git = "https://github.com/sandshrewmetaprotocols/metashrew", branch = "sandshrewmetadev/v9.1.0", default-features = false }
+metashrew-core = { git = "https://github.com/sandshrewmetaprotocols/metashrew", tag = "v9.0.3-beta.2", default-features = false }
+metashrew-support = { git = "https://github.com/sandshrewmetaprotocols/metashrew", tag = "v9.0.3-beta.2", default-features = false }
 alkanes-support = { git = "https://github.com/kungfuflex/alkanes-rs", branch = "kungfuflex/moka" }
 
 # EVM
