@@ -62,6 +62,58 @@ pub fn create_inscription_transaction_to_address(
     }
 }
 
+/// Create a BRC20-Prog activation transaction.
+/// Input[0] spends the reveal tx's inscription output.
+/// Output[0] is OP_RETURN "BRC20PROG" (1 sat).
+/// Output[1+] are additional outputs (e.g., dust to signer address).
+/// Output[last] is change.
+pub fn create_activation_transaction(
+    reveal_txid: &Txid,
+    reveal_vout: u32,
+    additional_outputs: Vec<TxOut>,
+) -> Transaction {
+    use bitcoin::blockdata::opcodes;
+    use bitcoin::blockdata::script::Builder;
+
+    let op_return_script = Builder::new()
+        .push_opcode(opcodes::all::OP_RETURN)
+        .push_slice(b"BRC20PROG")
+        .into_script();
+
+    let mut outputs = vec![TxOut {
+        value: Amount::from_sat(1),
+        script_pubkey: op_return_script,
+    }];
+    outputs.extend(additional_outputs);
+
+    // Change output
+    let change_addr = get_test_address(0);
+    outputs.push(TxOut {
+        value: Amount::from_sat(50_000),
+        script_pubkey: change_addr.script_pubkey(),
+    });
+
+    Transaction {
+        version: Version(2),
+        lock_time: bitcoin::absolute::LockTime::ZERO,
+        input: vec![
+            TxIn {
+                previous_output: OutPoint::new(*reveal_txid, reveal_vout),
+                script_sig: ScriptBuf::new(),
+                sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
+                witness: Witness::new(),
+            },
+            TxIn {
+                previous_output: create_mock_outpoint(99),
+                script_sig: ScriptBuf::new(),
+                sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
+                witness: Witness::new(),
+            },
+        ],
+        output: outputs,
+    }
+}
+
 /// Create a transfer transaction (no inscription, just moves an outpoint)
 pub fn create_transfer_transaction(prev_txid: &Txid, prev_vout: u32) -> Transaction {
     Transaction {
@@ -162,7 +214,7 @@ pub fn create_test_transaction() -> Transaction {
 pub fn create_mock_outpoint(n: u32) -> OutPoint {
     OutPoint {
         txid: Txid::from_str(&format!(
-            "000000000000000000000000000000000000000000000000000000000000000{}",
+            "{:0>64x}",
             n
         )).unwrap(),
         vout: 0,
