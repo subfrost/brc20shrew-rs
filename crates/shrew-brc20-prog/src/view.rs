@@ -1,33 +1,31 @@
 use crate::proto::{CallRequest, CallResponse};
 use shrew_evm::database::MetashrewDB;
-use revm::primitives::{Address, U256, TxKind};
+use shrew_evm::ShrewPrecompiles;
+use revm::primitives::{Address, B256, U256, TxKind};
 use revm::primitives::hardfork::SpecId;
 use revm::context::result::{ExecutionResult, Output};
-use revm::context::{Context, TxEnv};
-use revm::{MainBuilder, ExecuteEvm};
+use revm::context::{Context, TxEnv, BlockEnv, CfgEnv, Journal, FrameStack, Evm};
+use revm::handler::instructions::EthInstructions;
+use revm::handler::EthFrame;
+use revm::interpreter::interpreter::EthInterpreter;
+use revm::ExecuteEvm;
+use shrew_support::constants::BRC20_PROG_MAX_CALL_GAS;
 
-type Ctx = Context<revm::context::BlockEnv, TxEnv, revm::context::CfgEnv, shrew_evm::database::MetashrewDB, revm::context::Journal<shrew_evm::database::MetashrewDB>, ()>;
+type Ctx = Context<BlockEnv, TxEnv, CfgEnv, MetashrewDB, Journal<MetashrewDB>, ()>;
+type ViewEvm = Evm<Ctx, (), EthInstructions<EthInterpreter, Ctx>, ShrewPrecompiles, EthFrame<EthInterpreter>>;
 
 /// BRC20-prog chain ID: 0x4252433230 ("BRC20" in ASCII)
 const BRC20_PROG_CHAIN_ID: u64 = 0x4252433230;
 
-/// Execute a read-only EVM call (eth_call style)
-pub fn call(request: &CallRequest) -> Result<CallResponse, String> {
-    let mut response = CallResponse::default();
-
-    if request.to.len() != 20 {
-        response.error = "Invalid 'to' address".to_string();
-        return Ok(response);
-    }
-
-    let to = Address::from_slice(&request.to);
-
-    // Build EVM context with CANCUN spec (view calls don't need height-specific spec)
+/// Build an EVM instance for view calls, matching the indexer's configuration exactly.
+/// This ensures that precompiles, instruction tables, and spec handling are identical
+/// to the execution environment used during indexing.
+fn build_view_evm() -> ViewEvm {
     let spec = SpecId::CANCUN;
     let mut ctx: Ctx = Context::new(MetashrewDB, spec);
 
     ctx.cfg.chain_id = BRC20_PROG_CHAIN_ID;
-    ctx.cfg.spec = SpecId::CANCUN;
+    ctx.cfg.spec = spec;
     ctx.cfg.limit_contract_code_size = Some(usize::MAX);
     ctx.cfg.disable_nonce_check = true;
     ctx.cfg.disable_eip3607 = true;
@@ -41,7 +39,36 @@ pub fn call(request: &CallRequest) -> Result<CallResponse, String> {
     ctx.block.basefee = 0;
     ctx.block.difficulty = U256::ZERO;
 
-    let mut evm = ctx.build_mainnet();
+    // Build EVM with the same precompiles and instruction set as the indexer.
+    // Previously used ctx.build_mainnet() which creates EthPrecompiles::default()
+    // and EthInstructions::new_mainnet() — both ignoring the configured spec.
+    let precompiles = ShrewPrecompiles::new(
+        spec.into(),
+        B256::ZERO, // No OP_RETURN tx context for view calls
+        0,          // Height not needed for view-only precompile calls
+    );
+
+    Evm {
+        ctx,
+        inspector: (),
+        instruction: EthInstructions::new_mainnet_with_spec(spec.into()),
+        precompiles,
+        frame_stack: FrameStack::new_prealloc(8),
+    }
+}
+
+/// Execute a read-only EVM call (eth_call style)
+pub fn call(request: &CallRequest) -> Result<CallResponse, String> {
+    let mut response = CallResponse::default();
+
+    if request.to.len() != 20 {
+        response.error = "Invalid 'to' address".to_string();
+        return Ok(response);
+    }
+
+    let to = Address::from_slice(&request.to);
+
+    let mut evm = build_view_evm();
 
     let tx = TxEnv {
         kind: TxKind::Call(to),
