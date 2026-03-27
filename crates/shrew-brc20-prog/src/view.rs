@@ -21,7 +21,7 @@ const BRC20_PROG_CHAIN_ID: u64 = 0x4252433230;
 /// This ensures that precompiles, instruction tables, and spec handling are identical
 /// to the execution environment used during indexing.
 fn build_view_evm() -> ViewEvm {
-    let spec = SpecId::CANCUN;
+    let spec = SpecId::PRAGUE;
     let mut ctx: Ctx = Context::new(MetashrewDB, spec);
 
     ctx.cfg.chain_id = BRC20_PROG_CHAIN_ID;
