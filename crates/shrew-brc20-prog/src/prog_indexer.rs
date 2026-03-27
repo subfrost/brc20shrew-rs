@@ -33,6 +33,18 @@ type ShrewEvm = Evm<Ctx, (), EthInstructions<EthInterpreter, Ctx>, ShrewPrecompi
 /// BRC20-prog chain ID: 0x4252433230 ("BRC20" in ASCII)
 const BRC20_PROG_CHAIN_ID: u64 = 0x4252433230;
 
+/// Derive an EVM address from an inscription entry.
+/// Uses keccak256(inscription_txid || vout_le32)[12:] to get a deterministic
+/// 20-byte address that represents the inscription creator.
+fn derive_sender_address(entry: &InscriptionEntry) -> Address {
+    use revm::primitives::keccak256;
+    let mut input = Vec::new();
+    input.extend_from_slice(&entry.id.txid[..]);
+    input.extend_from_slice(&entry.id.index.to_le_bytes());
+    let hash = keccak256(&input);
+    Address::from_slice(&hash[12..32])
+}
+
 /// Table key for tracking whether controller has been deployed
 const CONTROLLER_DEPLOYED_KEY: &str = "/prog/controller_deployed";
 
@@ -75,8 +87,9 @@ fn get_evm_spec(height: u32) -> SpecId {
     }
 }
 
-fn make_tx(kind: TxKind, data: Bytes, gas_limit: u64) -> TxEnv {
+fn make_tx(kind: TxKind, data: Bytes, gas_limit: u64, caller: Address) -> TxEnv {
     TxEnv {
+        caller,
         kind,
         data,
         gas_limit,
@@ -208,12 +221,12 @@ impl ProgrammableBrc20Indexer {
                         }
                         "call" | "c" => {
                             if let Ok(call) = serde_json::from_value::<CallOp>(op.data) {
-                                self.execute_call(call);
+                                self.execute_call(&entry, call);
                             }
                         }
                         "transact" | "t" => {
                             if let Ok(transact) = serde_json::from_value::<TransactOp>(op.data) {
-                                self.execute_transact(transact);
+                                self.execute_transact(&entry, transact);
                             }
                         }
                         _ => {}
@@ -255,9 +268,10 @@ impl ProgrammableBrc20Indexer {
         let hex_str = op.d.strip_prefix("0x").unwrap_or(&op.d);
         let data: Bytes = hex::decode(hex_str).unwrap_or_default().into();
         let gas_limit = (data.len() as u64 * BRC20_PROG_GAS_PER_BYTE).min(BRC20_PROG_MAX_CALL_GAS);
+        let sender = derive_sender_address(entry);
 
         let mut evm = self.build_evm(B256::ZERO);
-        let tx = make_tx(TxKind::Create, data, gas_limit);
+        let tx = make_tx(TxKind::Create, data, gas_limit, sender);
 
         let result = evm.transact_commit(tx);
         if let Ok(exec_result) = result {
@@ -273,7 +287,7 @@ impl ProgrammableBrc20Indexer {
         }
     }
 
-    fn execute_call(&mut self, op: CallOp) {
+    fn execute_call(&mut self, entry: &InscriptionEntry, op: CallOp) {
         // Resolve contract address — either from "c" (hex address) or "i" (inscription ID)
         let address = if let Some(ref addr_hex) = op.c {
             let hex = addr_hex.strip_prefix("0x").unwrap_or(addr_hex);
@@ -292,14 +306,15 @@ impl ProgrammableBrc20Indexer {
         let data_hex = op.d.strip_prefix("0x").unwrap_or(&op.d);
         let data: Bytes = hex::decode(data_hex).unwrap_or_default().into();
         let gas_limit = (data.len() as u64 * BRC20_PROG_GAS_PER_BYTE).min(BRC20_PROG_MAX_CALL_GAS);
+        let sender = derive_sender_address(entry);
 
         let mut evm = self.build_evm(B256::ZERO);
-        let tx = make_tx(TxKind::Call(address), data, gas_limit);
+        let tx = make_tx(TxKind::Call(address), data, gas_limit, sender);
 
         let _ = evm.transact_commit(tx);
     }
 
-    fn execute_transact(&mut self, op: TransactOp) {
+    fn execute_transact(&mut self, entry: &InscriptionEntry, op: TransactOp) {
         // Resolve address from "to" or "c"
         let addr_hex = op.to.as_deref().or(op.c.as_deref()).unwrap_or("");
         let hex = addr_hex.strip_prefix("0x").unwrap_or(addr_hex);
@@ -310,9 +325,10 @@ impl ProgrammableBrc20Indexer {
         let data_hex = op.d.strip_prefix("0x").unwrap_or(&op.d);
         let data: Bytes = hex::decode(data_hex).unwrap_or_default().into();
         let gas_limit = (data.len() as u64 * BRC20_PROG_GAS_PER_BYTE).min(BRC20_PROG_MAX_CALL_GAS);
+        let sender = derive_sender_address(entry);
 
         let mut evm = self.build_evm(B256::ZERO);
-        let tx = make_tx(TxKind::Call(address), data, gas_limit);
+        let tx = make_tx(TxKind::Call(address), data, gas_limit, sender);
 
         let _ = evm.transact_commit(tx);
     }
@@ -348,7 +364,7 @@ impl ProgrammableBrc20Indexer {
         let gas_limit = BRC20_PROG_MAX_CALL_GAS;
 
         let mut evm = self.build_evm(B256::ZERO);
-        let tx = make_tx(TxKind::Call(CONTROLLER_ADDRESS), data, gas_limit);
+        let tx = make_tx(TxKind::Call(CONTROLLER_ADDRESS), data, gas_limit, CONTROLLER_ADDRESS);
         let _ = evm.transact_commit(tx);
     }
 
@@ -376,7 +392,7 @@ impl ProgrammableBrc20Indexer {
         let gas_limit = BRC20_PROG_MAX_CALL_GAS;
 
         let mut evm = self.build_evm(B256::ZERO);
-        let tx = make_tx(TxKind::Call(CONTROLLER_ADDRESS), data, gas_limit);
+        let tx = make_tx(TxKind::Call(CONTROLLER_ADDRESS), data, gas_limit, CONTROLLER_ADDRESS);
         let _ = evm.transact_commit(tx);
     }
 }
