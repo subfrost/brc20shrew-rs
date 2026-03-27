@@ -27,6 +27,7 @@ pub fn call(request: &CallRequest) -> Result<CallResponse, String> {
     let mut ctx: Ctx = Context::new(MetashrewDB, spec);
 
     ctx.cfg.chain_id = BRC20_PROG_CHAIN_ID;
+    ctx.cfg.spec = SpecId::CANCUN;
     ctx.cfg.limit_contract_code_size = Some(usize::MAX);
     ctx.cfg.disable_nonce_check = true;
     ctx.cfg.disable_eip3607 = true;
@@ -34,6 +35,7 @@ pub fn call(request: &CallRequest) -> Result<CallResponse, String> {
     ctx.cfg.disable_base_fee = true;
     ctx.cfg.disable_fee_charge = true;
     ctx.cfg.disable_block_gas_limit = true;
+    ctx.cfg.disable_priority_fee_check = true;
 
     ctx.block.gas_limit = u64::MAX;
     ctx.block.basefee = 0;
