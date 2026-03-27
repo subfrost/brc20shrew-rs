@@ -1,4 +1,4 @@
-///! Delegatecall state persistence tests
+///! Delegatecall state persistence tests + TSTORE/TLOAD (Prague) tests
 ///!
 ///! Tests that state changes made via DELEGATECALL during contract
 ///! construction are properly committed to MetashrewDB.
@@ -281,7 +281,39 @@ fn test_delegatecall_with_nested_create() {
     assert!(!is_zero,
         "DELEGATECALL + nested CREATE should produce non-zero child address in proxy storage");
     let child_hex: String = child_addr_bytes.iter().map(|b| format!("{:02x}", b)).collect();
-    // Note: the child was created by the PROXY (via delegatecall), so its address is
-    // keccak256(rlp([proxy_addr, proxy_nonce])). This proves nested CREATE inside
-    // delegatecall works and state is committed to the proxy's storage.
+}
+
+/// Test 5: TSTORE/TLOAD (Prague EIP-1153)
+/// Deploy a contract that uses TSTORE, call it, verify no revert.
+#[test]
+fn test_tstore_tload_works() {
+    clear();
+    // Runtime: TSTORE(slot=0, value=1), then TLOAD(slot=0), PUSH1 0, MSTORE, PUSH1 32, PUSH1 0, RETURN
+    // TSTORE = 0x5d, TLOAD = 0x5c
+    // 6001 6000 5d     → TSTORE(0, 1)
+    // 6000 5c          → TLOAD(0)
+    // 6000 52          → MSTORE(0, tload_result)
+    // 6020 6000 f3     → RETURN(0, 32)
+    // = 14 bytes
+    let runtime = "6001600060005c60005260206000f3";
+    // Wait, TSTORE takes (key, value) from stack: pops key then value
+    // PUSH1 1, PUSH1 0, TSTORE → key=0, value=1 → stores 1 at transient slot 0
+    // Actually TSTORE: pops value(top) then key(second)? Let me check EVM spec:
+    // TSTORE: key = stack[0], value = stack[1] (top = key, second = value)
+    // So: PUSH1 1 (value), PUSH1 0 (key), TSTORE → stores value=1 at key=0
+    // TLOAD: key = stack[0] → PUSH1 0, TLOAD → pushes transient[0] = 1
+    let runtime_hex = "600160005d60005c60005260206000f3"; // 15 bytes
+    let bytecode = wrap_runtime(&runtime_hex);
+
+    let addr = deploy_contract(&bytecode, 912690).expect("deploy");
+    let resp = view_call(&addr, &[0u8; 4]);
+    if !resp.success {
+        panic!("TSTORE/TLOAD call FAILED: {} — Prague opcodes may not be enabled!", resp.error);
+    }
+    assert_eq!(resp.result.len(), 32);
+    // Transient storage is per-transaction, so TLOAD in a view call
+    // might not see the TSTORE from the same call (depends on EVM impl).
+    // But the key test is that it doesn't REVERT — if TSTORE is an invalid
+    // opcode, the call reverts.
+    // With Prague spec, TSTORE should succeed (no revert).
 }

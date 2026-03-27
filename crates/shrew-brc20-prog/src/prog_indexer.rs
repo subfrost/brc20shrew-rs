@@ -660,23 +660,68 @@ impl ProgrammableBrc20Indexer {
         let mut evm = self.build_evm(Self::resolve_op_return_tx_id(entry, block));
         let tx = make_tx(TxKind::Call(address), data, gas_limit, sender);
 
-        // Store execution result for debugging
+        // Use transact() + inspect state diff + manual commit
         {
             use revm::context::result::ExecutionResult;
-            let result_str = match evm.transact_commit(tx) {
-                Ok(ExecutionResult::Success { gas_used, .. }) =>
-                    format!("success,gas={}", gas_used),
-                Ok(ExecutionResult::Revert { output, gas_used }) => {
-                    let rh = hex::encode(&output);
-                    format!("revert,gas={},out={}", gas_used, &rh[..rh.len().min(200)])
+            use revm::ExecuteEvm;
+            use revm::DatabaseCommit;
+
+            match evm.transact(tx) {
+                Ok(result_and_state) => {
+                    let result_str = match &result_and_state.result {
+                        ExecutionResult::Success { gas_used, output, .. } => {
+                            // Inspect state diff
+                            let state = &result_and_state.state;
+                            let num_accounts = state.len();
+                            let mut touched = 0u32;
+                            let mut storage_changes = 0u32;
+                            let mut detail = String::new();
+                            for (addr, acct) in state {
+                                if acct.is_touched() {
+                                    touched += 1;
+                                    let total_slots = acct.storage.len() as u32;
+                                    let changed: u32 = acct.storage.iter()
+                                        .filter(|(_, v)| v.is_changed()).count() as u32;
+                                    storage_changes += changed;
+                                    // Log ALL accounts with their slot counts
+                                    detail.push_str(&format!(
+                                        "{}:c={},slots={},changed={},nonce={};",
+                                        &hex::encode(addr.as_slice())[..8],
+                                        acct.is_created() as u8,
+                                        total_slots,
+                                        changed,
+                                        acct.info.nonce,
+                                    ));
+                                }
+                            }
+                            let out_len = match output {
+                                revm::context::result::Output::Call(b) => b.len(),
+                                revm::context::result::Output::Create(b, _) => b.len(),
+                            };
+                            format!("success,gas={},accounts={},touched={},storage_changes={},out_len={},detail={}",
+                                gas_used, num_accounts, touched, storage_changes, out_len, detail)
+                        }
+                        ExecutionResult::Revert { output, gas_used } => {
+                            let rh = hex::encode(output);
+                            format!("revert,gas={},out={}", gas_used, &rh[..rh.len().min(200)])
+                        }
+                        ExecutionResult::Halt { reason, gas_used } =>
+                            format!("halt,{:?},gas={}", reason, gas_used),
+                    };
+                    let mut ptr = metashrew_core::index_pointer::IndexPointer::from_keyword(DEBUG_LAST_RESULT_KEY);
+                    ptr.set(Arc::new(result_str.into_bytes()));
+
+                    // Commit the state changes
+                    if matches!(result_and_state.result, ExecutionResult::Success { .. }) {
+                        let mut db = MetashrewDB;
+                        db.commit(result_and_state.state);
+                    }
                 }
-                Ok(ExecutionResult::Halt { reason, gas_used }) =>
-                    format!("halt,{:?},gas={}", reason, gas_used),
-                Err(e) =>
-                    format!("error,{:?}", e),
-            };
-            let mut ptr = metashrew_core::index_pointer::IndexPointer::from_keyword(DEBUG_LAST_RESULT_KEY);
-            ptr.set(Arc::new(result_str.into_bytes()));
+                Err(e) => {
+                    let mut ptr = metashrew_core::index_pointer::IndexPointer::from_keyword(DEBUG_LAST_RESULT_KEY);
+                    ptr.set(Arc::new(format!("error,{:?}", e).into_bytes()));
+                }
+            }
         }
     }
 
