@@ -88,22 +88,35 @@ impl Database for MetashrewDB {
 
 impl DatabaseCommit for MetashrewDB {
     fn commit(&mut self, changes: revm::primitives::map::HashMap<Address, Account>) {
-        #[cfg(test)]
+        // Debug: log commit summary to a well-known key for diagnosis
         {
-            // Debug: log all accounts and their storage changes
+            let mut summary = String::new();
+            let mut total_accounts = 0u32;
+            let mut touched_accounts = 0u32;
+            let mut total_storage_changes = 0u32;
             for (address, account) in &changes {
-                let touched = account.is_touched();
-                let created = account.is_created();
-                let storage_count = account.storage.len();
-                let changed_count = account.storage.iter().filter(|(_, v)| v.is_changed()).count();
-                if touched || storage_count > 0 {
-                    // Use a simple side-channel: write to a debug key
-                    let debug_key = format!("/debug/commit/{}", hex::encode(address.as_slice()));
-                    let debug_val = format!("touched={},created={},storage={},changed={}", touched, created, storage_count, changed_count);
-                    let mut ptr = metashrew_core::index_pointer::IndexPointer::from_keyword(&debug_key);
-                    ptr.set(Arc::new(debug_val.into_bytes()));
+                total_accounts += 1;
+                if account.is_touched() {
+                    touched_accounts += 1;
+                    let changed = account.storage.iter().filter(|(_, v)| v.is_changed()).count() as u32;
+                    total_storage_changes += changed;
+                    if changed > 0 || account.is_created() {
+                        summary.push_str(&format!(
+                            "{}:t={},c={},s={};",
+                            &hex::encode(address.as_slice())[..8],
+                            account.is_touched() as u8,
+                            account.is_created() as u8,
+                            changed,
+                        ));
+                    }
                 }
             }
+            let commit_summary = format!(
+                "accounts={},touched={},storage_changes={},details={}",
+                total_accounts, touched_accounts, total_storage_changes, summary,
+            );
+            let mut ptr = metashrew_core::index_pointer::IndexPointer::from_keyword("/debug/last_commit");
+            ptr.set(Arc::new(commit_summary.into_bytes()));
         }
 
         for (address, account) in changes {
