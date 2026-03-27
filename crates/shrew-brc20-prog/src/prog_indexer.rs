@@ -136,12 +136,15 @@ fn get_evm_spec(height: u32) -> SpecId {
     }
 }
 
-fn make_tx(kind: TxKind, data: Bytes, gas_limit: u64, caller: Address) -> TxEnv {
+fn make_tx(kind: TxKind, data: Bytes, _gas_limit: u64, caller: Address) -> TxEnv {
+    // Match canonical brc20-prog: always use u64::MAX for tx gas limit.
+    // The block gas limit is also u64::MAX, so execution is only limited by
+    // computational steps, not gas accounting.
     TxEnv {
         caller,
         kind,
         data,
-        gas_limit,
+        gas_limit: u64::MAX,
         gas_price: 0,
         value: U256::ZERO,
         chain_id: Some(BRC20_PROG_CHAIN_ID),
@@ -165,10 +168,14 @@ impl ProgrammableBrc20Indexer {
         let mut ctx: Ctx = Context::new(MetashrewDB, spec);
 
         ctx.cfg.chain_id = BRC20_PROG_CHAIN_ID;
+        ctx.cfg.spec = spec;
         ctx.cfg.limit_contract_code_size = Some(usize::MAX);
         ctx.cfg.disable_nonce_check = true;
         ctx.cfg.disable_eip3607 = true;
+        ctx.cfg.disable_balance_check = true;
         ctx.cfg.disable_base_fee = true;
+        ctx.cfg.disable_fee_charge = true;
+        ctx.cfg.disable_block_gas_limit = true;
         ctx.cfg.disable_priority_fee_check = true;
 
         ctx.block.number = U256::from(self.current_height);
