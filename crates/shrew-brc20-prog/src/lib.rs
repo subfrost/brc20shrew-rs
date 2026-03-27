@@ -39,5 +39,19 @@ pub fn call(input: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     Ok(to_vec(&view::call(&req)?)?)
 }
 
+/// Debug view: returns the last processed inscription content and EVM execution result.
+/// Call via metashrew_view ["debug", "0x", "latest"]
+#[metashrew_core::view]
+pub fn debug(_input: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    use metashrew_support::index_pointer::KeyValuePointer;
+    let last_inscription = metashrew_core::index_pointer::IndexPointer::from_keyword("/debug/last_inscription").get();
+    let last_result = metashrew_core::index_pointer::IndexPointer::from_keyword("/debug/last_result").get();
+    let response = serde_json::json!({
+        "last_inscription": String::from_utf8_lossy(&last_inscription).to_string(),
+        "last_result": String::from_utf8_lossy(&last_result).to_string(),
+    });
+    Ok(serde_json::to_vec(&response)?)
+}
+
 #[cfg(test)]
 mod tests;

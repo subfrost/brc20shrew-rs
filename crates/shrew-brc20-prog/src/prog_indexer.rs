@@ -97,6 +97,11 @@ fn derive_sender_address(entry: &InscriptionEntry, block: &Block) -> Address {
 /// Table key for tracking whether controller has been deployed
 const CONTROLLER_DEPLOYED_KEY: &str = "/prog/controller_deployed";
 
+/// Debug: last processed inscription content (for diagnosing devnet issues)
+const DEBUG_LAST_INSCRIPTION_KEY: &str = "/debug/last_inscription";
+/// Debug: last processed inscription result
+const DEBUG_LAST_RESULT_KEY: &str = "/debug/last_result";
+
 #[derive(Debug, Deserialize)]
 struct ProgOperation {
     p: String,
@@ -161,9 +166,7 @@ fn get_evm_spec(height: u32) -> SpecId {
 }
 
 fn make_tx(kind: TxKind, data: Bytes, _gas_limit: u64, caller: Address) -> TxEnv {
-    // Match canonical brc20-prog: always use u64::MAX for tx gas limit.
-    // The block gas limit is also u64::MAX, so execution is only limited by
-    // computational steps, not gas accounting.
+    // Match canonical brc20-prog: use u64::MAX for tx gas limit.
     TxEnv {
         caller,
         kind,
@@ -586,6 +589,18 @@ impl ProgrammableBrc20Indexer {
     }
 
     fn execute_call(&mut self, entry: &InscriptionEntry, op: CallOp, block: &Block) {
+        // Debug: store the inscription for diagnosis
+        {
+            let debug_content = format!(
+                "op=call c={:?} d_len={} d_prefix={}",
+                op.c.as_deref().unwrap_or("none"),
+                op.d.len(),
+                &op.d[..op.d.len().min(20)],
+            );
+            let mut ptr = metashrew_core::index_pointer::IndexPointer::from_keyword(DEBUG_LAST_INSCRIPTION_KEY);
+            ptr.set(Arc::new(debug_content.into_bytes()));
+        }
+
         // Resolve contract address — either from "c" (hex address) or "i" (inscription ID)
         let address = if let Some(ref addr_hex) = op.c {
             let hex = addr_hex.strip_prefix("0x").unwrap_or(addr_hex);
@@ -609,37 +624,23 @@ impl ProgrammableBrc20Indexer {
         let mut evm = self.build_evm(Self::resolve_op_return_tx_id(entry, block));
         let tx = make_tx(TxKind::Call(address), data, gas_limit, sender);
 
-        // Store debug info for call result (test builds only)
-        #[cfg(test)]
+        // Store execution result for debugging
         {
             use revm::context::result::ExecutionResult;
-            match evm.transact_commit(tx) {
-                Ok(ExecutionResult::Success { gas_used, .. }) => {
-                    let k = format!("/debug/call/{}", hex::encode(address.as_slice()));
-                    let mut p = metashrew_core::index_pointer::IndexPointer::from_keyword(&k);
-                    p.set(Arc::new(format!("success,gas={}", gas_used).into_bytes()));
-                }
+            let result_str = match evm.transact_commit(tx) {
+                Ok(ExecutionResult::Success { gas_used, .. }) =>
+                    format!("success,gas={}", gas_used),
                 Ok(ExecutionResult::Revert { output, gas_used }) => {
-                    let k = format!("/debug/call/{}", hex::encode(address.as_slice()));
                     let rh = hex::encode(&output);
-                    let mut p = metashrew_core::index_pointer::IndexPointer::from_keyword(&k);
-                    p.set(Arc::new(format!("revert,gas={},out={}", gas_used, &rh[..rh.len().min(100)]).into_bytes()));
+                    format!("revert,gas={},out={}", gas_used, &rh[..rh.len().min(200)])
                 }
-                Ok(ExecutionResult::Halt { reason, gas_used }) => {
-                    let k = format!("/debug/call/{}", hex::encode(address.as_slice()));
-                    let mut p = metashrew_core::index_pointer::IndexPointer::from_keyword(&k);
-                    p.set(Arc::new(format!("halt,{:?},gas={}", reason, gas_used).into_bytes()));
-                }
-                Err(e) => {
-                    let k = format!("/debug/call/{}", hex::encode(address.as_slice()));
-                    let mut p = metashrew_core::index_pointer::IndexPointer::from_keyword(&k);
-                    p.set(Arc::new(format!("error,{:?}", e).into_bytes()));
-                }
-            }
-        }
-        #[cfg(not(test))]
-        {
-            let _ = evm.transact_commit(tx);
+                Ok(ExecutionResult::Halt { reason, gas_used }) =>
+                    format!("halt,{:?},gas={}", reason, gas_used),
+                Err(e) =>
+                    format!("error,{:?}", e),
+            };
+            let mut ptr = metashrew_core::index_pointer::IndexPointer::from_keyword(DEBUG_LAST_RESULT_KEY);
+            ptr.set(Arc::new(result_str.into_bytes()));
         }
     }
 
