@@ -42,22 +42,50 @@ fn pkscript_to_evm_address(script_pubkey: &[u8]) -> Address {
 }
 
 /// Derive the sender EVM address from an inscription entry and its block.
-/// Looks up the inscription's output script_pubkey and computes keccak256(pkscript)[12:].
-/// Falls back to keccak256(inscription_id)[12:] if the output can't be found.
+///
+/// Strategy: Use the inscription transaction's first input's previous output
+/// to trace back to the funding address. In the commit-reveal pattern:
+///   - Reveal tx input[0] spends the commit output
+///   - The commit output was funded by the wallet
+///   - Find the commit tx in the same block or prior blocks
+///   - Use the commit tx's SECOND output (change output back to wallet) pkscript
+///
+/// For simplicity and cross-block compatibility, we use the inscription
+/// transaction's first input's previous_output txid to find the commit tx.
+/// If the commit tx is in the SAME block (atomic broadcast), we can resolve it.
+/// Otherwise, fall back to the inscription output pkscript.
 fn derive_sender_address(entry: &InscriptionEntry, block: &Block) -> Address {
-    // Find the transaction containing this inscription
     let txid = entry.id.txid;
+
+    // Find the inscription (reveal) transaction
     for tx in &block.txdata {
         if tx.compute_txid() == txid {
-            // The inscription output is at the satpoint vout
+            if !tx.input.is_empty() {
+                let prev_txid = tx.input[0].previous_output.txid;
+
+                // Try to find the commit tx in the same block
+                for prev_tx in &block.txdata {
+                    if prev_tx.compute_txid() == prev_txid {
+                        // The commit tx's change output (last non-OP_RETURN output)
+                        // goes back to the wallet. Use its pkscript.
+                        for output in prev_tx.output.iter().rev() {
+                            if !output.script_pubkey.is_op_return() && output.value.to_sat() > 546 {
+                                return pkscript_to_evm_address(output.script_pubkey.as_bytes());
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Fallback: use inscription output pkscript
             let vout = entry.satpoint.outpoint.vout as usize;
             if vout < tx.output.len() {
-                let pkscript = tx.output[vout].script_pubkey.as_bytes();
-                return pkscript_to_evm_address(pkscript);
+                return pkscript_to_evm_address(tx.output[vout].script_pubkey.as_bytes());
             }
         }
     }
-    // Fallback: use inscription ID hash
+
+    // Last resort: derive from inscription ID
     use revm::primitives::keccak256;
     let mut input = Vec::new();
     input.extend_from_slice(&entry.id.txid[..]);
