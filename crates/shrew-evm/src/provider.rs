@@ -53,7 +53,15 @@ impl<CTX: ContextTr> PrecompileProvider<CTX> for ShrewPrecompiles {
             // Extract input bytes from CallInput
             let input_bytes: Vec<u8> = match &inputs.input {
                 CallInput::Bytes(bytes) => bytes.0.to_vec(),
-                _ => vec![],
+                CallInput::SharedBuffer(range) => {
+                    // Read from shared memory buffer via the context
+                    use revm::context_interface::LocalContextTr;
+                    if let Some(slice_ref) = context.local().shared_memory_buffer_slice(range.clone()) {
+                        slice_ref.to_vec()
+                    } else {
+                        vec![]
+                    }
+                }
             };
 
             let result = precompiles::execute_precompile(
