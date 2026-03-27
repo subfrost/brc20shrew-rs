@@ -121,6 +121,47 @@ fn test_prog_wrong_protocol_ignored() {
 }
 
 #[test]
+fn test_prog_deploy_with_0x_prefix() {
+    clear();
+    let height = 840000u32;
+    // Same bytecode but with 0x prefix (as SDK produces)
+    let bytecode = "0x600160005260016020f3";
+    let content = format!(r#"{{"p":"brc20-prog","op":"deploy","d":"{}"}}"#, bytecode);
+    let tx = create_inscription_transaction(content.as_bytes(), "application/json", None);
+    let block = create_block_with_txs(vec![create_coinbase_transaction(height), tx.clone()]);
+    index_ord_block(&block, height).unwrap();
+
+    let mut prog = ProgrammableBrc20Indexer::new();
+    prog.index_block(&block, height);
+
+    let inscription_txid = tx.txid();
+    let inscription_id = shrew_support::inscription::InscriptionId::new(inscription_txid, 0);
+    let inscription_id_bytes = inscription_id.to_bytes();
+
+    let contract_addr = INSCRIPTION_ID_TO_CONTRACT_ADDRESS.select(&inscription_id_bytes).get();
+    assert!(
+        !contract_addr.is_empty(),
+        "Deploy with 0x-prefixed bytecode should store contract address"
+    );
+}
+
+#[test]
+fn test_prog_call_with_address_field_no_panic() {
+    clear();
+    let height = 840000u32;
+    // Test that a call inscription with "c" (address) field doesn't panic.
+    // The call targets a non-existent contract — it should silently fail.
+    let call_content = r#"{"p":"brc20-prog","op":"call","c":"0x0000000000000000000000000000000000000001","d":"0x00"}"#;
+    let tx = create_inscription_transaction(call_content.as_bytes(), "application/json", None);
+    let block = create_block_with_txs(vec![create_coinbase_transaction(height), tx]);
+    index_ord_block(&block, height).unwrap();
+
+    let mut prog = ProgrammableBrc20Indexer::new();
+    // Should not panic even calling a non-existent contract via "c" field
+    prog.index_block(&block, height);
+}
+
+#[test]
 fn test_prog_deploy_invalid_hex_ignored() {
     clear();
     let height = 840000u32;

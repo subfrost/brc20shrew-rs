@@ -252,7 +252,8 @@ impl ProgrammableBrc20Indexer {
     }
 
     fn execute_deploy(&mut self, entry: &InscriptionEntry, op: DeployOp) {
-        let data: Bytes = hex::decode(op.d).unwrap_or_default().into();
+        let hex_str = op.d.strip_prefix("0x").unwrap_or(&op.d);
+        let data: Bytes = hex::decode(hex_str).unwrap_or_default().into();
         let gas_limit = (data.len() as u64 * BRC20_PROG_GAS_PER_BYTE).min(BRC20_PROG_MAX_CALL_GAS);
 
         let mut evm = self.build_evm(B256::ZERO);
