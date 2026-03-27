@@ -1722,7 +1722,7 @@ checksum = "f8ca58f447f06ed17d5fc4043ce1b10dd205e060fb3ce5b979b8ed8e59ff3f79"
 [[package]]
 name = "metashrew-core"
 version = "9.0.1"
-source = "git+https://github.com/sandshrewmetaprotocols/metashrew?tag=v9.0.3-beta.2#4210e102d4d5b77c17c0264bc353663e5fad9786"
+source = "git+https://github.com/sandshrewmetaprotocols/metashrew?tag=v9.0.3-beta.2#506ad123a32500179407ec4f7a25c349bcc0c9e0"
 dependencies = [
  "anyhow",
  "bitcoin 0.31.2",
@@ -1741,7 +1741,7 @@ dependencies = [
 [[package]]
 name = "metashrew-macros"
 version = "9.0.1"
-source = "git+https://github.com/sandshrewmetaprotocols/metashrew?tag=v9.0.3-beta.2#4210e102d4d5b77c17c0264bc353663e5fad9786"
+source = "git+https://github.com/sandshrewmetaprotocols/metashrew?tag=v9.0.3-beta.2#506ad123a32500179407ec4f7a25c349bcc0c9e0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1751,7 +1751,7 @@ dependencies = [
 [[package]]
 name = "metashrew-support"
 version = "9.0.1"
-source = "git+https://github.com/sandshrewmetaprotocols/metashrew?tag=v9.0.3-beta.2#4210e102d4d5b77c17c0264bc353663e5fad9786"
+source = "git+https://github.com/sandshrewmetaprotocols/metashrew?tag=v9.0.3-beta.2#506ad123a32500179407ec4f7a25c349bcc0c9e0"
 dependencies = [
  "anyhow",
  "bech32 0.11.1",
