@@ -300,13 +300,21 @@ impl ProgrammableBrc20Indexer {
 
             if let Ok(op) = serde_json::from_slice::<ProgOperation>(&content_bytes) {
                 if op.p == "brc20-prog" {
-                    let needs_activation = matches!(op.op.as_str(), "call" | "c" | "transact" | "t");
+                    // Check for activation tx (3-tx pattern).
+                    // If found, use the activation txid for getTxId() precompile.
+                    // If not found, execute anyway — calls that don't use getTxId()
+                    // (like initialize(), setSigner, etc.) work fine without it.
+                    // Calls that DO use getTxId() will get the reveal txid or B256::ZERO,
+                    // and the contract will revert if it can't find the tx details.
+                    //
+                    // We still store deferred entries so that when the activation tx
+                    // arrives, we can RE-execute the call with the correct context.
+                    // But we don't skip execution — we execute optimistically now.
+                    let is_call_or_transact = matches!(op.op.as_str(), "call" | "c" | "transact" | "t");
                     let has_activation = Self::has_activation_mapping(&entry);
 
-                    // For call/transact: if we need activation context but don't have it,
-                    // defer until the activation tx is found in a later block.
-                    if needs_activation && !has_activation {
-                        // Check if the reveal tx itself has OP_RETURN (2-tx pattern)
+                    if is_call_or_transact && !has_activation {
+                        // Check if the reveal tx has OP_RETURN (2-tx pattern)
                         let reveal_has_op_return = block.txdata.iter()
                             .find(|tx| tx.compute_txid() == entry.id.txid)
                             .map(|tx| {
@@ -318,8 +326,7 @@ impl ProgrammableBrc20Indexer {
                             .unwrap_or(false);
 
                         if !reveal_has_op_return {
-                            // Defer this inscription — activation tx will trigger re-execution.
-                            // Pre-compute the sender address now while we have the reveal block.
+                            // Store deferred entry for re-execution when activation arrives
                             let sender_addr = derive_sender_address(&entry, block);
                             let deferred = DeferredInscription {
                                 content: content_bytes.to_vec(),
@@ -334,7 +341,10 @@ impl ProgrammableBrc20Indexer {
                                 ).select(&entry.id.txid[..].to_vec());
                                 ptr.set(Arc::new(data));
                             }
-                            continue; // Skip execution for now
+                            // DON'T skip — execute optimistically. Pure EVM calls
+                            // (initialize, setSigner, etc.) work without activation.
+                            // Calls needing getTxId() will revert, and the deferred
+                            // entry allows re-execution when activation arrives.
                         }
                     }
 

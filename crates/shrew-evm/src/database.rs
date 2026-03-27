@@ -88,6 +88,24 @@ impl Database for MetashrewDB {
 
 impl DatabaseCommit for MetashrewDB {
     fn commit(&mut self, changes: revm::primitives::map::HashMap<Address, Account>) {
+        #[cfg(test)]
+        {
+            // Debug: log all accounts and their storage changes
+            for (address, account) in &changes {
+                let touched = account.is_touched();
+                let created = account.is_created();
+                let storage_count = account.storage.len();
+                let changed_count = account.storage.iter().filter(|(_, v)| v.is_changed()).count();
+                if touched || storage_count > 0 {
+                    // Use a simple side-channel: write to a debug key
+                    let debug_key = format!("/debug/commit/{}", hex::encode(address.as_slice()));
+                    let debug_val = format!("touched={},created={},storage={},changed={}", touched, created, storage_count, changed_count);
+                    let mut ptr = metashrew_core::index_pointer::IndexPointer::from_keyword(&debug_key);
+                    ptr.set(Arc::new(debug_val.into_bytes()));
+                }
+            }
+        }
+
         for (address, account) in changes {
             // Only process touched accounts (matching canonical brc20-prog behavior)
             if !account.is_touched() {

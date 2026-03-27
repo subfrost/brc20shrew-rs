@@ -7,3 +7,4 @@ mod view_call_tests;
 mod frbtc_tests;
 mod activation_debug_tests;
 mod delegatecall_tests;
+mod bis_swap_tests;
