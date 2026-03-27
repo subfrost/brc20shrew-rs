@@ -35,7 +35,20 @@ impl Database for MetashrewDB {
         if result.is_empty() {
             Ok(None)
         } else {
-            Ok(bincode::deserialize(&result).ok())
+            let mut account_info: AccountInfo = match bincode::deserialize(&result) {
+                Ok(info) => info,
+                Err(_) => return Ok(None),
+            };
+            // Load contract code from storage (matching canonical brc20-prog behavior).
+            // AccountInfo deserialized from bincode may not include the code field,
+            // so we must look it up by code_hash.
+            if account_info.code.is_none() || account_info.code.as_ref().map_or(false, |c| c.is_empty()) {
+                account_info.code = Some(
+                    self.code_by_hash(account_info.code_hash)
+                        .unwrap_or(Bytecode::new())
+                );
+            }
+            Ok(Some(account_info))
         }
     }
 
@@ -76,26 +89,39 @@ impl Database for MetashrewDB {
 impl DatabaseCommit for MetashrewDB {
     fn commit(&mut self, changes: revm::primitives::map::HashMap<Address, Account>) {
         for (address, account) in changes {
+            // Only process touched accounts (matching canonical brc20-prog behavior)
+            if !account.is_touched() {
+                continue;
+            }
+
             if account.is_selfdestructed() {
                 EVM_ACCOUNTS.select(&address.to_vec()).set(Arc::new(vec![]));
-            } else {
-                let account_info_bytes = bincode::serialize(&account.info).unwrap();
-                EVM_ACCOUNTS.select(&address.to_vec()).set(Arc::new(account_info_bytes));
+                continue;
+            }
 
+            let account_info_bytes = bincode::serialize(&account.info).unwrap();
+            EVM_ACCOUNTS.select(&address.to_vec()).set(Arc::new(account_info_bytes));
+
+            // Only store code for newly created accounts
+            if account.is_created() {
                 if let Some(bytecode) = &account.info.code {
                     if !bytecode.is_empty() {
                         CODE_HASH_TO_BYTECODE.select(&account.info.code_hash.to_vec())
                             .set(Arc::new(bytecode.bytes().to_vec()));
                     }
                 }
+            }
 
-                for (index, value) in account.storage {
-                    let mut key = address.to_vec();
-                    key.extend_from_slice(&index.to_be_bytes::<32>());
-                    EVM_STORAGE.select(&key).set(
-                        Arc::new(value.present_value().to_be_bytes::<32>().to_vec())
-                    );
+            // Only store changed storage slots
+            for (index, value) in account.storage {
+                if !value.is_changed() {
+                    continue;
                 }
+                let mut key = address.to_vec();
+                key.extend_from_slice(&index.to_be_bytes::<32>());
+                EVM_STORAGE.select(&key).set(
+                    Arc::new(value.present_value().to_be_bytes::<32>().to_vec())
+                );
             }
         }
     }
