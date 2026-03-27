@@ -167,6 +167,19 @@ fn test_initialize_on_proxy() {
     // Call initialize on the proxy
     call_contract(&proxy_addr, &init_calldata, 912692);
 
+    // Read debug info from execute_call
+    let debug_key = format!("/debug/call/{}", hex::encode(proxy_addr.as_slice()));
+    let debug_ptr = metashrew_core::index_pointer::IndexPointer::from_keyword(&debug_key);
+    let debug_val = debug_ptr.get();
+    let debug_str = String::from_utf8_lossy(&debug_val);
+    if !debug_str.is_empty() {
+        // This is the actual EVM execution result
+        assert!(debug_str.starts_with("success"),
+            "initialize() EVM execution failed: {}", debug_str);
+    } else {
+        panic!("No debug info from execute_call — call inscription was not processed!");
+    }
+
     // Check owner() = 8da5cb5b
     let owner_resp = view_call(&proxy_addr, &hex::decode("8da5cb5b").unwrap());
     if owner_resp.success {

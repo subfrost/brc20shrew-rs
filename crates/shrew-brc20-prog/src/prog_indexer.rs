@@ -609,7 +609,38 @@ impl ProgrammableBrc20Indexer {
         let mut evm = self.build_evm(Self::resolve_op_return_tx_id(entry, block));
         let tx = make_tx(TxKind::Call(address), data, gas_limit, sender);
 
-        let _ = evm.transact_commit(tx);
+        // Store debug info for call result (test builds only)
+        #[cfg(test)]
+        {
+            use revm::context::result::ExecutionResult;
+            match evm.transact_commit(tx) {
+                Ok(ExecutionResult::Success { gas_used, .. }) => {
+                    let k = format!("/debug/call/{}", hex::encode(address.as_slice()));
+                    let mut p = metashrew_core::index_pointer::IndexPointer::from_keyword(&k);
+                    p.set(Arc::new(format!("success,gas={}", gas_used).into_bytes()));
+                }
+                Ok(ExecutionResult::Revert { output, gas_used }) => {
+                    let k = format!("/debug/call/{}", hex::encode(address.as_slice()));
+                    let rh = hex::encode(&output);
+                    let mut p = metashrew_core::index_pointer::IndexPointer::from_keyword(&k);
+                    p.set(Arc::new(format!("revert,gas={},out={}", gas_used, &rh[..rh.len().min(100)]).into_bytes()));
+                }
+                Ok(ExecutionResult::Halt { reason, gas_used }) => {
+                    let k = format!("/debug/call/{}", hex::encode(address.as_slice()));
+                    let mut p = metashrew_core::index_pointer::IndexPointer::from_keyword(&k);
+                    p.set(Arc::new(format!("halt,{:?},gas={}", reason, gas_used).into_bytes()));
+                }
+                Err(e) => {
+                    let k = format!("/debug/call/{}", hex::encode(address.as_slice()));
+                    let mut p = metashrew_core::index_pointer::IndexPointer::from_keyword(&k);
+                    p.set(Arc::new(format!("error,{:?}", e).into_bytes()));
+                }
+            }
+        }
+        #[cfg(not(test))]
+        {
+            let _ = evm.transact_commit(tx);
+        }
     }
 
     fn execute_transact(&mut self, entry: &InscriptionEntry, op: TransactOp, block: &Block) {
