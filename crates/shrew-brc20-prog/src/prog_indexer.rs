@@ -33,10 +33,31 @@ type ShrewEvm = Evm<Ctx, (), EthInstructions<EthInterpreter, Ctx>, ShrewPrecompi
 /// BRC20-prog chain ID: 0x4252433230 ("BRC20" in ASCII)
 const BRC20_PROG_CHAIN_ID: u64 = 0x4252433230;
 
-/// Derive an EVM address from an inscription entry.
-/// Uses keccak256(inscription_txid || vout_le32)[12:] to get a deterministic
-/// 20-byte address that represents the inscription creator.
-fn derive_sender_address(entry: &InscriptionEntry) -> Address {
+/// Derive an EVM address from a Bitcoin script pubkey.
+/// Matches the canonical brc20-prog: keccak256(pkscript)[12:]
+fn pkscript_to_evm_address(script_pubkey: &[u8]) -> Address {
+    use revm::primitives::keccak256;
+    let hash = keccak256(script_pubkey);
+    Address::from_slice(&hash[12..32])
+}
+
+/// Derive the sender EVM address from an inscription entry and its block.
+/// Looks up the inscription's output script_pubkey and computes keccak256(pkscript)[12:].
+/// Falls back to keccak256(inscription_id)[12:] if the output can't be found.
+fn derive_sender_address(entry: &InscriptionEntry, block: &Block) -> Address {
+    // Find the transaction containing this inscription
+    let txid = entry.id.txid;
+    for tx in &block.txdata {
+        if tx.compute_txid() == txid {
+            // The inscription output is at the satpoint vout
+            let vout = entry.satpoint.outpoint.vout as usize;
+            if vout < tx.output.len() {
+                let pkscript = tx.output[vout].script_pubkey.as_bytes();
+                return pkscript_to_evm_address(pkscript);
+            }
+        }
+    }
+    // Fallback: use inscription ID hash
     use revm::primitives::keccak256;
     let mut input = Vec::new();
     input.extend_from_slice(&entry.id.txid[..]);
@@ -184,7 +205,7 @@ impl ProgrammableBrc20Indexer {
         self.controller_deployed = true;
     }
 
-    pub fn index_block(&mut self, _block: &Block, height: u32) {
+    pub fn index_block(&mut self, block: &Block, height: u32) {
         self.current_height = height;
 
         // Ensure controller contract is deployed
@@ -216,17 +237,17 @@ impl ProgrammableBrc20Indexer {
                     match op.op.as_str() {
                         "deploy" | "d" => {
                             if let Ok(deploy) = serde_json::from_value::<DeployOp>(op.data) {
-                                self.execute_deploy(&entry, deploy);
+                                self.execute_deploy(&entry, deploy, block);
                             }
                         }
                         "call" | "c" => {
                             if let Ok(call) = serde_json::from_value::<CallOp>(op.data) {
-                                self.execute_call(&entry, call);
+                                self.execute_call(&entry, call, block);
                             }
                         }
                         "transact" | "t" => {
                             if let Ok(transact) = serde_json::from_value::<TransactOp>(op.data) {
-                                self.execute_transact(&entry, transact);
+                                self.execute_transact(&entry, transact, block);
                             }
                         }
                         _ => {}
@@ -264,11 +285,11 @@ impl ProgrammableBrc20Indexer {
         deposits_table.clear(height);
     }
 
-    fn execute_deploy(&mut self, entry: &InscriptionEntry, op: DeployOp) {
+    fn execute_deploy(&mut self, entry: &InscriptionEntry, op: DeployOp, block: &Block) {
         let hex_str = op.d.strip_prefix("0x").unwrap_or(&op.d);
         let data: Bytes = hex::decode(hex_str).unwrap_or_default().into();
         let gas_limit = (data.len() as u64 * BRC20_PROG_GAS_PER_BYTE).min(BRC20_PROG_MAX_CALL_GAS);
-        let sender = derive_sender_address(entry);
+        let sender = derive_sender_address(entry, block);
 
         let mut evm = self.build_evm(B256::ZERO);
         let tx = make_tx(TxKind::Create, data, gas_limit, sender);
@@ -287,7 +308,7 @@ impl ProgrammableBrc20Indexer {
         }
     }
 
-    fn execute_call(&mut self, entry: &InscriptionEntry, op: CallOp) {
+    fn execute_call(&mut self, entry: &InscriptionEntry, op: CallOp, block: &Block) {
         // Resolve contract address — either from "c" (hex address) or "i" (inscription ID)
         let address = if let Some(ref addr_hex) = op.c {
             let hex = addr_hex.strip_prefix("0x").unwrap_or(addr_hex);
@@ -306,7 +327,7 @@ impl ProgrammableBrc20Indexer {
         let data_hex = op.d.strip_prefix("0x").unwrap_or(&op.d);
         let data: Bytes = hex::decode(data_hex).unwrap_or_default().into();
         let gas_limit = (data.len() as u64 * BRC20_PROG_GAS_PER_BYTE).min(BRC20_PROG_MAX_CALL_GAS);
-        let sender = derive_sender_address(entry);
+        let sender = derive_sender_address(entry, block);
 
         let mut evm = self.build_evm(B256::ZERO);
         let tx = make_tx(TxKind::Call(address), data, gas_limit, sender);
@@ -314,7 +335,7 @@ impl ProgrammableBrc20Indexer {
         let _ = evm.transact_commit(tx);
     }
 
-    fn execute_transact(&mut self, entry: &InscriptionEntry, op: TransactOp) {
+    fn execute_transact(&mut self, entry: &InscriptionEntry, op: TransactOp, block: &Block) {
         // Resolve address from "to" or "c"
         let addr_hex = op.to.as_deref().or(op.c.as_deref()).unwrap_or("");
         let hex = addr_hex.strip_prefix("0x").unwrap_or(addr_hex);
@@ -325,7 +346,7 @@ impl ProgrammableBrc20Indexer {
         let data_hex = op.d.strip_prefix("0x").unwrap_or(&op.d);
         let data: Bytes = hex::decode(data_hex).unwrap_or_default().into();
         let gas_limit = (data.len() as u64 * BRC20_PROG_GAS_PER_BYTE).min(BRC20_PROG_MAX_CALL_GAS);
-        let sender = derive_sender_address(entry);
+        let sender = derive_sender_address(entry, block);
 
         let mut evm = self.build_evm(B256::ZERO);
         let tx = make_tx(TxKind::Call(address), data, gas_limit, sender);
