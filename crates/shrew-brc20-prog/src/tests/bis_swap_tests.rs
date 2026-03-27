@@ -74,6 +74,49 @@ fn pad_uint256(val: u64) -> String {
     format!("{:0>64x}", val)
 }
 
+const PROXY_WITH_ARGS_HEX: &str = include_str!("fixtures/minimal_proxy_no_viair.hex");
+
+/// Step 0: Deploy the exact proxy bytecode (with constructor args baked in)
+/// and verify the EIP-1967 slot is set.
+#[test]
+fn test_proxy_constructor_args_embedded() {
+    clear();
+
+    // First deploy a simple impl (just needs to be at the expected address)
+    // Use address 0xaaaa...aaaa (which is the fake impl in the fixture)
+    // We need something at that address, so deploy a minimal contract there
+    // Actually, the proxy just stores the address — it doesn't check if there's code
+    // Let's just deploy the proxy and check if the slot was stored
+
+    let hex = PROXY_WITH_ARGS_HEX.trim();
+    let proxy_addr = deploy(hex, 912690);
+    assert!(proxy_addr.is_some(), "Proxy should deploy");
+    let proxy_addr = proxy_addr.unwrap();
+
+    // Read EIP-1967 slot from MetashrewDB
+    let mut db = MetashrewDB;
+    let eip1967_slot = U256::from_be_slice(&hex::decode("360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc").unwrap());
+    let stored_impl = db.storage(proxy_addr, eip1967_slot).unwrap();
+
+    let impl_hex = format!("{:064x}", stored_impl);
+    let expected_impl = format!("{:0>64}", "aa".repeat(20));
+
+    if stored_impl == U256::ZERO {
+        panic!(
+            "EIP-1967 slot is ZERO!\n\
+             Proxy address: {:?}\n\
+             Expected impl in slot: 0x{}\n\
+             Actual slot value: 0x{}\n\
+             This means the constructor didn't store _logic correctly.\n\
+             The Solidity arg loader in the init code read the wrong offset.",
+            proxy_addr, expected_impl, impl_hex,
+        );
+    }
+
+    assert_eq!(impl_hex, expected_impl,
+        "EIP-1967 slot should contain the impl address 0xaaaa...aaaa");
+}
+
 // ============================================================================
 // Step 1: Deploy BiS_Swap implementation alone
 // ============================================================================

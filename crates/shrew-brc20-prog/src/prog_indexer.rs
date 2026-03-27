@@ -566,6 +566,20 @@ impl ProgrammableBrc20Indexer {
     }
 
     fn execute_deploy(&mut self, entry: &InscriptionEntry, op: DeployOp, block: &Block) {
+        // Debug: log deploy bytecode info (stored per-deploy, indexed by sequence)
+        {
+            let d_len = op.d.len();
+            let prefix = &op.d[..op.d.len().min(20)];
+            let suffix = if op.d.len() > 20 { &op.d[op.d.len()-20..] } else { "" };
+            let info = format!("d_len={} prefix={} suffix={}", d_len, prefix, suffix);
+            // Store as last_deploy AND also as deploy/<d_len> for per-contract lookup
+            let mut ptr = metashrew_core::index_pointer::IndexPointer::from_keyword("/debug/last_deploy");
+            ptr.set(Arc::new(info.clone().into_bytes()));
+            let key = format!("/debug/deploy/{}", d_len);
+            let mut ptr2 = metashrew_core::index_pointer::IndexPointer::from_keyword(&key);
+            ptr2.set(Arc::new(info.into_bytes()));
+        }
+
         let hex_str = op.d.strip_prefix("0x").unwrap_or(&op.d);
         let data: Bytes = hex::decode(hex_str).unwrap_or_default().into();
         let gas_limit = (data.len() as u64 * BRC20_PROG_GAS_PER_BYTE).min(BRC20_PROG_MAX_CALL_GAS);
@@ -575,6 +589,28 @@ impl ProgrammableBrc20Indexer {
         let tx = make_tx(TxKind::Create, data, gas_limit, sender);
 
         let result = evm.transact_commit(tx);
+        // Debug: log deploy result
+        {
+            use revm::context::result::ExecutionResult;
+            let result_str = match &result {
+                Ok(ExecutionResult::Success { output, gas_used, .. }) => {
+                    let addr = match output {
+                        Output::Create(_, Some(a)) => format!("0x{}", hex::encode(a.as_slice())),
+                        Output::Create(_, None) => "create_no_addr".to_string(),
+                        Output::Call(_) => "call_output".to_string(),
+                    };
+                    format!("success,gas={},addr={}", gas_used, addr)
+                }
+                Ok(ExecutionResult::Revert { output, gas_used }) =>
+                    format!("revert,gas={},out_len={}", gas_used, output.len()),
+                Ok(ExecutionResult::Halt { reason, gas_used }) =>
+                    format!("halt,{:?},gas={}", reason, gas_used),
+                Err(e) => format!("error,{:?}", e),
+            };
+            let mut ptr = metashrew_core::index_pointer::IndexPointer::from_keyword("/debug/last_deploy_result");
+            ptr.set(Arc::new(result_str.into_bytes()));
+        }
+
         if let Ok(exec_result) = result {
             if let ExecutionResult::Success { output, .. } = exec_result {
                 if let Output::Create(_, Some(address)) = output {
