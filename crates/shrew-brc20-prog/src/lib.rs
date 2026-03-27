@@ -71,6 +71,48 @@ pub fn storage_at(input: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     Ok(serde_json::to_vec(&serde_json::json!({"value": value_hex}))?)
 }
 
+/// Read account info (code size, nonce, balance) at an address.
+/// Input: JSON { "address": "0x..." }
+/// Returns: JSON { "code_size": N, "nonce": N, "has_code": bool, "code_hash": "0x..." }
+#[metashrew_core::view]
+pub fn code_at(input: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    use shrew_evm::database::MetashrewDB;
+    use revm::Database;
+    use revm::primitives::Address;
+
+    let req: serde_json::Value = serde_json::from_slice(input)?;
+    let addr_hex = req["address"].as_str().unwrap_or("");
+    let addr_bytes = hex::decode(addr_hex.strip_prefix("0x").unwrap_or(addr_hex))?;
+    if addr_bytes.len() != 20 {
+        return Ok(serde_json::to_vec(&serde_json::json!({"error": "invalid address"}))?);
+    }
+    let address = Address::from_slice(&addr_bytes);
+
+    let mut db = MetashrewDB;
+    match db.basic(address)? {
+        Some(info) => {
+            let code_size = info.code.as_ref().map(|c| c.len()).unwrap_or(0);
+            let code_hash_hex = format!("0x{}", hex::encode(info.code_hash.as_slice()));
+            Ok(serde_json::to_vec(&serde_json::json!({
+                "code_size": code_size,
+                "nonce": info.nonce,
+                "has_code": code_size > 0,
+                "code_hash": code_hash_hex,
+                "code_is_none": info.code.is_none(),
+            }))?)
+        }
+        None => {
+            Ok(serde_json::to_vec(&serde_json::json!({
+                "code_size": 0,
+                "nonce": 0,
+                "has_code": false,
+                "code_hash": "none",
+                "exists": false,
+            }))?)
+        }
+    }
+}
+
 /// Debug view: returns the last processed inscription content and EVM execution result.
 /// Call via metashrew_view ["debug", "0x", "latest"]
 #[metashrew_core::view]
