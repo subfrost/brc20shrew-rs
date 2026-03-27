@@ -51,14 +51,20 @@ struct DeployOp {
 
 #[derive(Debug, Deserialize)]
 struct CallOp {
-    i: String, // inscription id of contract
-    d: String, // hex calldata
+    #[serde(default)]
+    i: Option<String>, // inscription id of contract (legacy format)
+    #[serde(default)]
+    c: Option<String>, // contract address (0x-prefixed hex, new format)
+    d: String,         // hex calldata
 }
 
 #[derive(Debug, Deserialize)]
 struct TransactOp {
-    to: String,   // hex address
-    d: String,    // hex calldata
+    #[serde(default)]
+    to: Option<String>, // hex address
+    #[serde(default)]
+    c: Option<String>,  // contract address (alternative to 'to')
+    d: String,          // hex calldata
 }
 
 fn get_evm_spec(height: u32) -> SpecId {
@@ -267,13 +273,23 @@ impl ProgrammableBrc20Indexer {
     }
 
     fn execute_call(&mut self, op: CallOp) {
-        let inscription_id_bytes = op.i.as_bytes();
-        let pointer = INSCRIPTION_ID_TO_CONTRACT_ADDRESS.select(&inscription_id_bytes.to_vec());
-        let result = pointer.get();
-        if result.is_empty() { return; }
+        // Resolve contract address — either from "c" (hex address) or "i" (inscription ID)
+        let address = if let Some(ref addr_hex) = op.c {
+            let hex = addr_hex.strip_prefix("0x").unwrap_or(addr_hex);
+            let bytes = hex::decode(hex).unwrap_or_default();
+            if bytes.len() != 20 { return; }
+            Address::from_slice(&bytes)
+        } else if let Some(ref inscription_id) = op.i {
+            let pointer = INSCRIPTION_ID_TO_CONTRACT_ADDRESS.select(&inscription_id.as_bytes().to_vec());
+            let result = pointer.get();
+            if result.is_empty() { return; }
+            Address::from_slice(&result)
+        } else {
+            return; // No address source
+        };
 
-        let address = Address::from_slice(&result);
-        let data: Bytes = hex::decode(op.d).unwrap_or_default().into();
+        let data_hex = op.d.strip_prefix("0x").unwrap_or(&op.d);
+        let data: Bytes = hex::decode(data_hex).unwrap_or_default().into();
         let gas_limit = (data.len() as u64 * BRC20_PROG_GAS_PER_BYTE).min(BRC20_PROG_MAX_CALL_GAS);
 
         let mut evm = self.build_evm(B256::ZERO);
@@ -283,11 +299,15 @@ impl ProgrammableBrc20Indexer {
     }
 
     fn execute_transact(&mut self, op: TransactOp) {
-        let to_bytes = hex::decode(&op.to).unwrap_or_default();
+        // Resolve address from "to" or "c"
+        let addr_hex = op.to.as_deref().or(op.c.as_deref()).unwrap_or("");
+        let hex = addr_hex.strip_prefix("0x").unwrap_or(addr_hex);
+        let to_bytes = hex::decode(hex).unwrap_or_default();
         if to_bytes.len() != 20 { return; }
 
         let address = Address::from_slice(&to_bytes);
-        let data: Bytes = hex::decode(op.d).unwrap_or_default().into();
+        let data_hex = op.d.strip_prefix("0x").unwrap_or(&op.d);
+        let data: Bytes = hex::decode(data_hex).unwrap_or_default().into();
         let gas_limit = (data.len() as u64 * BRC20_PROG_GAS_PER_BYTE).min(BRC20_PROG_MAX_CALL_GAS);
 
         let mut evm = self.build_evm(B256::ZERO);
